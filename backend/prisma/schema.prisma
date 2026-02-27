@@ -1,0 +1,44 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Vendor {
+  id           String         @id @default(uuid())
+  firebase_uid String         @unique
+  email        String?        @unique
+  phone        String?
+  name         String?
+  created_at   DateTime       @default(now())
+  subscriptions Subscription[]
+
+  @@map("vendors")
+}
+
+model Plan {
+  id            String         @id @default(uuid())
+  name          String
+  price         Float
+  duration_days Int
+  subscriptions Subscription[]
+
+  @@map("plans")
+}
+
+model Subscription {
+  id         String   @id @default(uuid())
+  vendor_id  String
+  plan_id    String
+  start_date DateTime
+  end_date   DateTime
+  status     String
+  
+  vendor     Vendor   @relation(fields: [vendor_id], references: [id], onDelete: Cascade)
+  plan       Plan     @relation(fields: [plan_id], references: [id], onDelete: Restrict)
+
+  @@map("subscriptions")
+}

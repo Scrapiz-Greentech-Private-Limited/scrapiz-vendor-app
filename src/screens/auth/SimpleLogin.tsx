@@ -1,19 +1,19 @@
-import React, { useState, useEffect } from 'react';
-import { 
-  View, 
-  Text, 
-  TextInput, 
-  TouchableOpacity, 
-  StyleSheet, 
-  ScrollView,
+import { MaterialIcons } from '@expo/vector-icons';
+import React, { useEffect, useState } from 'react';
+import {
   ActivityIndicator,
   Dimensions,
+  Keyboard,
   KeyboardAvoidingView,
   Platform,
-  Keyboard,
-  TouchableWithoutFeedback
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  TouchableWithoutFeedback,
+  View
 } from 'react-native';
-import { MaterialIcons } from '@expo/vector-icons';
 import { useAuth } from '../../../hooks/useAuth';
 
 const { height } = Dimensions.get('window');
@@ -25,7 +25,7 @@ export default function LoginScreen() {
   const [success, setSuccess] = useState('');
   const [isTyping, setIsTyping] = useState(false);
   const [isKeyboardVisible, setIsKeyboardVisible] = useState(false);
-  const { login, isLoading } = useAuth();
+  const { login, loginWithGoogle, isLoading } = useAuth();
 
   useEffect(() => {
     if (isTyping && error) {
@@ -84,6 +84,19 @@ export default function LoginScreen() {
       setSuccess('Login successful! Welcome to Scrapiz.');
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Failed to login. Please try again.';
+      setError(errorMessage);
+    }
+  };
+
+  const handleGoogleSignIn = async () => {
+    setError('');
+    setSuccess('');
+    
+    try {
+      await loginWithGoogle();
+      setSuccess('Login successful! Welcome to Scrapiz.');
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Failed to sign in with Google.';
       setError(errorMessage);
     }
   };
@@ -201,6 +214,26 @@ export default function LoginScreen() {
                   <MaterialIcons name="arrow-forward" size={18} color="white" />
                 </View>
               )}
+            </TouchableOpacity>
+
+            {/* Divider */}
+            <View style={styles.dividerContainer}>
+              <View style={styles.dividerLine} />
+              <Text style={styles.dividerText}>OR</Text>
+              <View style={styles.dividerLine} />
+            </View>
+
+            {/* Google Sign-In Button */}
+            <TouchableOpacity
+              style={[styles.googleButton, isSmallScreen && styles.googleButtonSmall]}
+              onPress={handleGoogleSignIn}
+              disabled={isLoading}
+              activeOpacity={0.8}
+            >
+              <MaterialIcons name="login" size={20} color="#1B7332" />
+              <Text style={[styles.googleButtonText, isSmallScreen && styles.googleButtonTextSmall]}>
+                Continue with Google
+              </Text>
             </TouchableOpacity>
 
             {/* Trust Section */}
@@ -893,5 +926,49 @@ const styles = StyleSheet.create({
   },
   logoTextSmall: {
     fontSize: 24,
+  },
+
+  // Divider Styles
+  dividerContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginVertical: 16,
+  },
+  dividerLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: '#e9ecef',
+  },
+  dividerText: {
+    marginHorizontal: 12,
+    fontSize: 12,
+    color: '#6c757d',
+    fontWeight: '600',
+  },
+
+  // Google Button Styles
+  googleButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'white',
+    borderRadius: 12,
+    paddingVertical: 16,
+    borderWidth: 2,
+    borderColor: '#1B7332',
+    gap: 8,
+    minHeight: 52,
+  },
+  googleButtonSmall: {
+    paddingVertical: 14,
+    minHeight: 48,
+  },
+  googleButtonText: {
+    color: '#1B7332',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  googleButtonTextSmall: {
+    fontSize: 15,
   },
 });
