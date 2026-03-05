@@ -50,6 +50,9 @@ export default {
     extra: {
       posthogApiKey: process.env.EXPO_PUBLIC_POSTHOG_API_KEY,
       posthogHost: process.env.EXPO_PUBLIC_POSTHOG_HOST || 'https://us.i.posthog.com',
+      "eas":{
+        "projectId": "84300c01-403e-46d0-bc86-af4fb17348e2"
+      },
     },
   },
 }
