@@ -48,8 +48,8 @@ export default {
       reactCompiler: true,
     },
     extra: {
-      posthogApiKey: process.env.POSTHOG_API_KEY,
-      posthogHost: process.env.POSTHOG_HOST || 'https://us.i.posthog.com',
+      posthogApiKey: process.env.EXPO_PUBLIC_POSTHOG_API_KEY,
+      posthogHost: process.env.EXPO_PUBLIC_POSTHOG_HOST || 'https://us.i.posthog.com',
     },
   },
 }
