@@ -1,27 +1,29 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { 
-  View, 
-  Text, 
-  TouchableOpacity, 
-  StyleSheet, 
-  ScrollView, 
-  Animated,
-  Linking,
-  Alert,
-  RefreshControl,
-  StatusBar
-} from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
+import * as Sentry from '@sentry/react-native';
+import { usePostHog } from 'posthog-react-native';
+import { useCallback, useEffect, useState } from 'react';
+import {
+    Alert,
+    Animated,
+    Linking,
+    RefreshControl,
+    ScrollView,
+    StatusBar,
+    StyleSheet,
+    Text,
+    TouchableOpacity,
+    View
+} from 'react-native';
 import { useAuth } from '../../../hooks/useAuth';
-import { BookingRequest } from '../../types';
 import { CreditBalance, CreditRechargeModal } from '../../components/ui';
 import CreditLoadingState from '../../components/ui/CreditLoadingState';
 import { BookingCardSkeleton } from '../../components/ui/SkeletonLoader';
-import { creditService } from '../../services/creditService';
+import { bookingStateService } from '../../services/bookingStateService';
 import { creditNotificationService } from '../../services/creditNotificationService';
 import { CreditRechargeResult } from '../../services/creditRechargeService';
+import { creditService } from '../../services/creditService';
 import HapticService from '../../services/hapticService';
-import { bookingStateService } from '../../services/bookingStateService';
+import { BookingRequest } from '../../types';
 
 interface DashboardProps {
   onBookingSelect: (booking: BookingRequest) => void;
@@ -32,6 +34,7 @@ interface DashboardProps {
 
 export default function Dashboard({ onBookingSelect, onShowToast, onNavigate }: DashboardProps) {
   const { user, toggleOnlineStatus } = useAuth();
+  const posthog = usePostHog();
   const [isOnline, setIsOnline] = useState(user?.isOnline || false);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [creditBalance, setCreditBalance] = useState<number>(0);
@@ -143,11 +146,15 @@ export default function Dashboard({ onBookingSelect, onShowToast, onNavigate }: 
       const newStatus = !isOnline;
       setIsOnline(newStatus);
       toggleOnlineStatus(); // Sync with auth context
-      
+      posthog.capture('vendor_online_status_toggled', {
+        new_status: newStatus ? 'online' : 'offline',
+        vendor_id: user?.id ?? null,
+      });
+
       if (newStatus) {
         await HapticService.success();
       }
-      
+
       onShowToast(
         newStatus ? 'You are now online and ready to receive bookings!' : 'You are now offline',
         'success'
@@ -316,6 +323,12 @@ export default function Dashboard({ onBookingSelect, onShowToast, onNavigate }: 
   };
 
   const handleRechargeSuccess = async (result: CreditRechargeResult) => {
+    posthog.capture('credit_recharge_completed', {
+      credits_added: result.creditsAdded ?? null,
+      new_balance: result.newBalance ?? null,
+      transaction_id: result.transactionId ?? null,
+      vendor_id: user?.id ?? null,
+    });
     if (result.newBalance !== undefined) {
       setCreditBalance(result.newBalance);
     } else {
@@ -445,6 +458,18 @@ export default function Dashboard({ onBookingSelect, onShowToast, onNavigate }: 
               </Text>
             </TouchableOpacity>
           </View>
+
+          {/* Sentry Test Button */}
+          <TouchableOpacity
+            style={styles.sentryTestButton}
+            onPress={() => {
+              Sentry.captureException(new Error('First error'));
+              onShowToast('Test error sent to Sentry!', 'success');
+            }}
+          >
+            <MaterialIcons name="bug-report" size={16} color="#FF6B35" />
+            <Text style={styles.sentryTestButtonText}>Test Sentry</Text>
+          </TouchableOpacity>
         </View>
 
         <View style={styles.content}>
@@ -1214,6 +1239,27 @@ const styles = StyleSheet.create({
   quickActionText: {
     fontSize: 12,
     color: '#1B7332',
+    fontWeight: '600',
+  },
+
+  // Sentry Test Button
+  sentryTestButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255, 107, 53, 0.1)',
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    marginTop: 12,
+    gap: 6,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 107, 53, 0.3)',
+  },
+
+  sentryTestButtonText: {
+    fontSize: 13,
+    color: '#FF6B35',
     fontWeight: '600',
   },
 });

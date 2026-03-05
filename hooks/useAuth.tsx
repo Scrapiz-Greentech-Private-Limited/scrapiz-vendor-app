@@ -1,4 +1,5 @@
 import { useState, createContext, useContext, ReactNode } from 'react';
+import { usePostHog } from 'posthog-react-native';
 import { User } from '../src/types';
 
 interface AuthContextType {
@@ -24,12 +25,13 @@ interface AuthProviderProps {
 }
 
 export const AuthProvider = ({ children }: AuthProviderProps) => {
+  const posthog = usePostHog();
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(false);
 
   const login = async (phone: string) => {
     setIsLoading(true);
-    
+
     try {
       // Simulate API call with potential failure
       await new Promise((resolve, reject) => {
@@ -42,16 +44,31 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
           }
         }, 2000);
       });
-      
+
       const mockUser: User = {
         id: '1',
         name: 'Rajesh Kumar',
         phone,
         isOnline: false
       };
-      
+
       setUser(mockUser);
+      posthog.identify(mockUser.id, {
+        $set: {
+          name: mockUser.name,
+          phone: mockUser.phone,
+        },
+        $set_once: {
+          first_login_date: new Date().toISOString(),
+        },
+      });
+      posthog.capture('vendor_logged_in', {
+        phone,
+      });
     } catch (error) {
+      posthog.capture('vendor_login_failed', {
+        error_message: error instanceof Error ? error.message : 'Unknown error',
+      });
       throw error; // Re-throw to be handled by the component
     } finally {
       setIsLoading(false);
@@ -59,6 +76,8 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
   };
 
   const logout = () => {
+    posthog.capture('vendor_logged_out');
+    posthog.reset();
     setUser(null);
   };
 

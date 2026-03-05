@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
-import { View, StyleSheet, Alert, StatusBar } from 'react-native';
+import { Alert, StatusBar, StyleSheet, View } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { PostHogProvider, usePostHog } from 'posthog-react-native';
+import { posthog } from './src/config/posthog';
 import { AuthProvider, useAuth } from './hooks/useAuth';
 
 // Auth Screens
@@ -10,40 +12,78 @@ import { SimpleLogin as LoginScreen } from './src/screens/auth';
 import { Dashboard, EarningsScreen, ManageScreen } from './src/screens/main';
 
 // Profile Screens
-import { ProfileScreen, PersonalInfoScreen, EditProfileScreen } from './src/screens/profile';
+import { EditProfileScreen, PersonalInfoScreen, ProfileScreen } from './src/screens/profile';
 
 // Settings Screens
-import { 
-  PaymentSettingsScreen, 
-  NotificationsScreen, 
-  HelpSupportScreen, 
-  AboutScreen,
-  AppSettingsScreen,
-  LanguageScreen,
-  ContactsScreen,
-  PrivacyScreen,
-  MoreMenuScreen
+import {
+    AboutScreen,
+    AppSettingsScreen,
+    ContactsScreen,
+    HelpSupportScreen,
+    LanguageScreen,
+    MoreMenuScreen,
+    NotificationsScreen,
+    PaymentSettingsScreen,
+    PrivacyScreen
 } from './src/screens/settings';
 
 // Job Screens
-import { 
-  JobHistoryScreen, 
-  FutureRequestsScreen, 
-  BookingDetailsScreen, 
-  ActiveJob, 
-  JobCompletion 
+import {
+    ActiveJob,
+    BookingDetailsScreen,
+    FutureRequestsScreen,
+    JobCompletion,
+    JobHistoryScreen
 } from './src/screens/jobs';
 import JobManagementScreen from './src/screens/jobs/JobManagementScreen';
 
 // Credit Screens
 import { CreditScreen } from './src/screens/credit';
 // Navigation & Common Components
-import { BottomNavigation } from './src/components/navigation';
+import * as Sentry from '@sentry/react-native';
 import { ErrorBoundary } from './src/components/common';
-import { BookingRequest, ActiveJob as ActiveJobType } from './src/types';
+import { BottomNavigation } from './src/components/navigation';
+import { ActiveJob as ActiveJobType, BookingRequest } from './src/types';
+
+Sentry.init({
+  dsn: 'https://676c8c0600d53ccec2da3d4a97fe54a9@o4510990813888512.ingest.us.sentry.io/4510990817951744',
+
+  // Adds more context data to events (IP address, cookies, user, etc.)
+  // For more information, visit: https://docs.sentry.io/platforms/react-native/data-management/data-collected/
+  sendDefaultPii: true,
+
+  // Enable Logs
+  enableLogs: true,
+
+  // Configure Session Replay
+  // Set to 1.0 for testing to capture every session
+  // Lower this value in production (e.g., 0.1 for 10% of sessions)
+  replaysSessionSampleRate: 1.0,
+  
+  // Keep at 1.0 to capture all sessions with errors
+  replaysOnErrorSampleRate: 1.0,
+  
+  integrations: [
+    // Mobile Replay Integration with privacy settings
+    Sentry.mobileReplayIntegration({
+      // Mask all text by default for privacy
+      maskAllText: true,
+      // Mask all images by default for privacy
+      maskAllImages: true,
+      // Mask all vector graphics by default for privacy
+      maskAllVectors: true,
+    }),
+    // Feedback integration for user feedback
+    Sentry.feedbackIntegration(),
+  ],
+
+  // uncomment the line below to enable Spotlight (https://spotlightjs.com)
+  // spotlight: __DEV__,
+});
 
 const AppContent = () => {
   const { user } = useAuth();
+  const posthogClient = usePostHog();
   const [activeTab, setActiveTab] = useState('home');
   const [selectedBooking, setSelectedBooking] = useState<BookingRequest | null>(null);
   const [showJobCompletion, setShowJobCompletion] = useState(false);
@@ -68,6 +108,14 @@ const AppContent = () => {
     setSelectedBooking(booking);
     setIsBookingAccepted(false); // Reset acceptance state for new booking
     setActiveTab('booking-details');
+    posthogClient.capture('booking_viewed', {
+      booking_id: booking.id,
+      scrap_type: booking.scrapType,
+      distance: booking.distance,
+      estimated_amount: booking.estimatedAmount,
+      payment_mode: booking.paymentMode,
+      priority: booking.priority ?? null,
+    });
   };
 
   const handleShowNotification = () => {
@@ -164,6 +212,14 @@ const AppContent = () => {
             isAccepted={isBookingAccepted}
             onAccept={() => {
               setIsBookingAccepted(true); // Mark booking as accepted
+              posthogClient.capture('booking_accepted', {
+                booking_id: selectedBooking.id,
+                scrap_type: selectedBooking.scrapType,
+                distance: selectedBooking.distance,
+                estimated_amount: selectedBooking.estimatedAmount,
+                payment_mode: selectedBooking.paymentMode,
+                priority: selectedBooking.priority ?? null,
+              });
               // Convert booking to active job
               const newActiveJob: ActiveJobType = {
                 ...selectedBooking,
@@ -178,6 +234,14 @@ const AppContent = () => {
               showToast('Booking accepted successfully!', 'success');
             }}
             onReject={() => {
+              posthogClient.capture('booking_rejected', {
+                booking_id: selectedBooking.id,
+                scrap_type: selectedBooking.scrapType,
+                distance: selectedBooking.distance,
+                estimated_amount: selectedBooking.estimatedAmount,
+                payment_mode: selectedBooking.paymentMode,
+                priority: selectedBooking.priority ?? null,
+              });
               showToast('Booking rejected', 'info');
               handleBackToHome();
             }}
@@ -188,6 +252,11 @@ const AppContent = () => {
           <ActiveJob
             job={activeJob}
             onStatusUpdate={(status) => {
+              posthogClient.capture('job_status_updated', {
+                job_id: activeJob.id,
+                new_status: status,
+                scrap_type: activeJob.scrapType,
+              });
               setActiveJob(prev => prev ? { ...prev, status } : null);
             }}
             onCompleteJob={() => {
@@ -202,6 +271,12 @@ const AppContent = () => {
         return (
           <JobCompletion
             onJobComplete={(totalAmount) => {
+              posthogClient.capture('job_completed', {
+                job_id: activeJob?.id ?? null,
+                total_amount: totalAmount,
+                scrap_type: activeJob?.scrapType ?? null,
+                payment_mode: activeJob?.paymentMode ?? null,
+              });
               showToast(`Job completed! ₹${totalAmount} earned`, 'success');
               setActiveJob(null);
               setShowJobCompletion(false);
@@ -300,15 +375,36 @@ const styles = StyleSheet.create({
   },
 });
 
-export default function App() {
+export default Sentry.wrap(function App() {
   return (
     <SafeAreaProvider>
-      <ErrorBoundary>
-        <AuthProvider>
-          <AppContent />
-        </AuthProvider>
-      </ErrorBoundary>
+      <PostHogProvider
+        client={posthog}
+        options={{
+          host: "https://us.i.posthog.com",
+          enableSessionReplay: true,
+          sessionReplayConfig :{
+            maskAllTextInputs: false,
+            maskAllImages: false,
+            captureLog: true,
+            captureNetworkTelemetry: true,
+            sampleRate: undefined,
+            throttleDelayMs: 1000,
+
+          }
+        }}
+        autocapture={{
+          captureScreens: true,
+          captureTouches: true,
+          propsToCapture: ['testID'],
+        }}
+      >
+        <ErrorBoundary>
+          <AuthProvider>
+            <AppContent />
+          </AuthProvider>
+        </ErrorBoundary>
+      </PostHogProvider>
     </SafeAreaProvider>
   );
-}
-
+});
