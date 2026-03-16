@@ -1,58 +1,60 @@
 export default {
   expo: {
-    name: 'Scrapiz-Vendor-App',
-    slug: 'Scrapiz-Vendor-App',
-    version: '1.0.0',
-    orientation: 'portrait',
-    icon: './assets/images/icon.png',
-    scheme: 'scrapizvendorapp',
-    userInterfaceStyle: 'automatic',
+    name: "Scrapiz-Vendor-App",
+    slug: "scrapiz-vendor",
+    version: "1.0.0",
+    orientation: "portrait",
+    icon: "./assets/images/icon.png",
+    scheme: "scrapizvendorapp",
+    userInterfaceStyle: "automatic",
     newArchEnabled: true,
     ios: {
       supportsTablet: true,
     },
     android: {
+      package: "in.scrapiz.vendor",
       adaptiveIcon: {
-        backgroundColor: '#E6F4FE',
-        foregroundImage: './assets/images/android-icon-foreground.png',
-        backgroundImage: './assets/images/android-icon-background.png',
-        monochromeImage: './assets/images/android-icon-monochrome.png',
+        backgroundColor: "#E6F4FE",
+        foregroundImage: "./assets/images/android-icon-foreground.png",
+        backgroundImage: "./assets/images/android-icon-background.png",
+        monochromeImage: "./assets/images/android-icon-monochrome.png",
       },
       edgeToEdgeEnabled: true,
       predictiveBackGestureEnabled: false,
     },
     plugins: [
       [
-        'expo-splash-screen',
+        "expo-splash-screen",
         {
-          image: './assets/images/splash-icon.png',
+          image: "./assets/images/splash-icon.png",
           imageWidth: 200,
-          resizeMode: 'contain',
-          backgroundColor: '#ffffff',
+          resizeMode: "contain",
+          backgroundColor: "#ffffff",
           dark: {
-            backgroundColor: '#000000',
+            backgroundColor: "#000000",
           },
         },
       ],
       [
-        '@sentry/react-native/expo',
+        "@sentry/react-native/expo",
         {
-          url: 'https://sentry.io/',
-          project: 'react-native',
-          organization: 'scrapiz-greentech-private-l-w6',
+          url: "https://sentry.io/",
+          project: "react-native",
+          organization: "scrapiz-greentech-private-l-w6",
         },
       ],
-      "expo-localization"
+      "expo-localization",
     ],
     experiments: {
       reactCompiler: true,
     },
     extra: {
       posthogApiKey: process.env.EXPO_PUBLIC_POSTHOG_API_KEY,
-      posthogHost: process.env.EXPO_PUBLIC_POSTHOG_HOST || 'https://us.i.posthog.com',
-      "eas":{
-        "projectId": "84300c01-403e-46d0-bc86-af4fb17348e2"
+      posthogHost:
+        process.env.EXPO_PUBLIC_POSTHOG_HOST || "https://us.i.posthog.com",
+      eas: {
+        projectId: "84300c01-403e-46d0-bc86-af4fb17348e2",
       },
     },
   },
-}
+};

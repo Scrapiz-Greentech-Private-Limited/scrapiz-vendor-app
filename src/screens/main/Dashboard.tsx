@@ -367,11 +367,11 @@ export default function Dashboard({ onBookingSelect, onShowToast, onNavigate }: 
   }, []);
 
   return (
-    <View style={styles.container}>
+    <View className="flex-1 bg-[#f8f9fa]">
       <StatusBar backgroundColor="#1B7332" barStyle="light-content" />
       <ScrollView 
-        style={styles.scrollView} 
-        contentContainerStyle={styles.scrollContent}
+        className="flex-1"
+        contentContainerStyle={{ flexGrow: 1 }}
         refreshControl={
           <RefreshControl
             refreshing={isRefreshing}
@@ -383,21 +383,22 @@ export default function Dashboard({ onBookingSelect, onShowToast, onNavigate }: 
         }
         showsVerticalScrollIndicator={false}
       >
-        {/* Enhanced Header */}
-        <View style={styles.header}>
-          <View style={styles.headerContent}>
-            <View style={styles.headerLeft}>
-              <View style={styles.greetingContainer}>
-                <Text style={styles.greeting}>
+        <View className="bg-[#1B7332] px-4 pt-14 pb-6 rounded-b-[24px] shadow-lg">
+          <View className="flex-row justify-between items-start mb-5">
+            <View className="flex-1">
+              <View className="flex-row items-center mb-1">
+                <Text className="text-[14px] text-white/90 font-medium">
                   {getGreeting()}!
                 </Text>
-                <Text style={styles.userName}>
+                <Text className="text-[16px] text-white font-bold ml-1">
                   {user?.name || 'Vendor'}
                 </Text>
               </View>
-              <Text style={styles.readyText}>Ready to collect scrap today?</Text>
+              <Text className="text-[20px] text-white font-bold tracking-tight">
+                {isOnline ? 'Ready to collect scrap today?' : 'Currently offline'}
+              </Text>
             </View>
-            <View style={styles.headerRight}>
+            <View className="items-end">
               {loadingBalance ? (
                 <CreditLoadingState type="balance" />
               ) : (
@@ -410,251 +411,229 @@ export default function Dashboard({ onBookingSelect, onShowToast, onNavigate }: 
             </View>
           </View>
 
-          {/* Online/Offline Toggle */}
-          <View style={styles.statusContainer}>
-            <View style={styles.statusLeft}>
-              <View 
-                style={[
-                  styles.statusIconContainer, 
-                  { backgroundColor: isOnline ? '#E8F5E8' : '#f8f9fa' }
-                ]}
-              >
+          <View className="bg-white flex-row justify-between items-center p-3.5 rounded-2xl shadow-sm border border-gray-100">
+            <View className="flex-row items-center">
+              <View className="w-9 h-9 rounded-full bg-[#E8F5E8] justify-center items-center mr-2.5 relative">
                 <MaterialIcons 
-                  name={isOnline ? 'wifi' : 'wifi-off'} 
+                  name={isOnline ? "wifi" : "wifi-off"} 
                   size={18} 
-                  color={isOnline ? '#1B7332' : '#6c757d'} 
+                  color={isOnline ? "#1B7332" : "#666"} 
                 />
-                {isOnline && (
-                  <View style={styles.onlineIndicator} />
-                )}
+                {isOnline && <View className="absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full bg-[#4CAF50] border-2 border-white" />}
               </View>
-              <View style={styles.statusTextContainer}>
-                <View style={styles.statusTitleRow}>
-                  <Text style={styles.statusTitle}>
-                    {isOnline ? 'Online' : 'Offline'}
-                  </Text>
-                  {isOnline && <View style={styles.liveDot} />}
+              <View className="justify-center">
+                <View className="flex-row items-center">
+                  <Text className="text-[15px] font-bold text-gray-800">{isOnline ? 'Online' : 'Offline'}</Text>
+                  {isOnline && <View className="w-1.5 h-1.5 rounded-full bg-[#4CAF50] ml-1.5" />}
                 </View>
-                <Text style={styles.statusSubtitle}>
-                  {isOnline ? 'Receiving new bookings' : 'Not receiving bookings'}
+                <Text className="text-[11px] text-gray-500">
+                  {isOnline ? 'Receiving new bookings' : 'Currently not receiving bookings'}
                 </Text>
               </View>
             </View>
             <TouchableOpacity
-              style={[
-                styles.toggleButton, 
-                isOnline ? styles.toggleButtonOffline : styles.toggleButtonOnline
-              ]}
+              className={`flex-row items-center px-3 py-2 rounded-xl ${isOnline ? 'bg-[#333]' : 'bg-[#1B7332]'}`}
               onPress={handleToggleOnline}
             >
               <MaterialIcons 
-                name={isOnline ? 'pause' : 'play-arrow'} 
+                name={isOnline ? "pause" : "play-arrow"} 
                 size={14} 
                 color="white" 
-                style={{ marginRight: 4 }}
+                style={{ marginRight: 4 }} 
               />
-              <Text style={[styles.toggleButtonText, isOnline ? styles.toggleTextOffline : styles.toggleTextOnline]}>
+              <Text className="text-[12px] font-bold text-white">
                 {isOnline ? 'Go Offline' : 'Go Online'}
               </Text>
             </TouchableOpacity>
           </View>
-
-          {/* Sentry Test Button */}
-          <TouchableOpacity
-            style={styles.sentryTestButton}
-            onPress={() => {
-              Sentry.captureException(new Error('First error'));
-              onShowToast('Test error sent to Sentry!', 'success');
-            }}
-          >
-            <MaterialIcons name="bug-report" size={16} color="#FF6B35" />
-            <Text style={styles.sentryTestButtonText}>Test Sentry</Text>
-          </TouchableOpacity>
+          
+          {isOnline && (
+            <TouchableOpacity
+              className="mt-4 py-2.5 px-4 bg-orange-500/10 rounded-xl flex-row items-center justify-center border border-orange-500/20"
+              onPress={() => {
+                Sentry.captureException(new Error('First error'));
+                onShowToast('Test error sent to Sentry!', 'success');
+              }}
+            >
+              <MaterialIcons name="bug-report" size={16} color="#FF6B35" />
+              <Text className="text-[#FF6B35] font-bold text-[13px] ml-1.5">Test Sentry</Text>
+            </TouchableOpacity>
+          )}
         </View>
 
-        <View style={styles.content}>
-          {/* Enhanced Booking Requests */}
-          <Animated.View style={[styles.bookingsContainer, styles.enhancedBookingsContainer, { opacity: fadeAnim }]}>
-            <View style={styles.bookingsHeader}>
-              <View style={styles.bookingsHeaderLeft}>
-                <View style={styles.bookingsIconContainer}>
-                  <MaterialIcons name="flash-on" size={20} color="#1B7332" />
-                </View>
-                <View>
-                  <Text style={styles.bookingsTitle}>New Booking Requests</Text>
-                  <Text style={styles.bookingsSubtitle}>
-                    {bookings.filter(booking => !processedBookings.includes(booking.id)).length} requests available
-                  </Text>
+        <View className="flex-1 px-4 pt-4">
+          {isOnline ? (
+            <Animated.View style={{ opacity: fadeAnim }} className="flex-1 mb-6">
+              <View className="flex-row justify-between items-center mb-4 px-1">
+                <View className="flex-row items-center">
+                  <View className="w-9 h-9 rounded-xl bg-[#E8F5E8] justify-center items-center mr-3">
+                    <MaterialIcons name="flash-on" size={20} color="#1B7332" />
+                  </View>
+                  <View>
+                    <Text className="text-[16px] font-bold text-gray-800">New Booking Requests</Text>
+                    <Text className="text-[12px] text-gray-500">
+                      {bookings.filter(booking => !processedBookings.includes(booking.id)).length} requests available
+                    </Text>
+                  </View>
                 </View>
               </View>
-            </View>
 
-            <View style={styles.bookingsList}>
-              {isRefreshing ? (
-                <View style={styles.loadingContainer}>
-                  {[1, 2, 3].map((i) => (
-                    <BookingCardSkeleton key={i} />
-                  ))}
-                </View>
-              ) : bookings.filter(booking => !processedBookings.includes(booking.id)).length > 0 ? (
-                bookings.filter(booking => !processedBookings.includes(booking.id)).map((booking) => (
-                  <Animated.View 
-                    key={booking.id} 
-                    style={[
-                      styles.bookingCard, 
-                      styles.enhancedBookingCard,
-                      { opacity: fadeAnim, transform: [{ translateY: slideAnim }] }
-                    ]}
-                  >
-                    {/* Simplified card header */}
-                    <View style={styles.cardHeader}>
-                      <View style={styles.leftSection}>
-                        <View style={styles.titleRow}>
-                          <Text style={styles.scrapType}>{booking.scrapType}</Text>
-                          <View style={[
-                            styles.priorityBadge,
-                            { backgroundColor: getPriorityColor(booking.priority || 'medium') }
-                          ]}>
-                            <MaterialIcons 
-                              name="priority-high" 
-                              size={10} 
-                              color="white" 
-                            />
-                            <Text style={styles.priorityText}>
-                              {booking.priority?.toUpperCase() || 'MED'}
+              <View className="gap-y-4">
+                {isRefreshing ? (
+                  <View className="gap-y-3">
+                    {[1, 2, 3].map((i) => (
+                      <BookingCardSkeleton key={i} />
+                    ))}
+                  </View>
+                ) : bookings.filter(booking => !processedBookings.includes(booking.id)).length > 0 ? (
+                  bookings.filter(booking => !processedBookings.includes(booking.id)).map((booking) => (
+                    <Animated.View 
+                      key={booking.id} 
+                      style={{ opacity: fadeAnim, transform: [{ translateY: slideAnim }] }}
+                      className="bg-white rounded-2xl p-4 border border-gray-100 shadow-sm"
+                    >
+                      <View className="flex-row justify-between mb-3">
+                        <View className="flex-1">
+                          <View className="flex-row items-center mb-1">
+                            <Text className="text-[14px] text-[#1B7332] font-bold mr-2">{booking.scrapType}</Text>
+                            <View 
+                              style={{ backgroundColor: getPriorityColor(booking.priority || 'medium') }}
+                              className="flex-row items-center px-1.5 py-0.5 rounded"
+                            >
+                              <MaterialIcons name="priority-high" size={10} color="white" />
+                              <Text className="text-[9px] font-black text-white ml-0.5">
+                                {booking.priority?.toUpperCase() || 'MED'}
+                              </Text>
+                            </View>
+                          </View>
+                          <Text className="text-[18px] font-bold text-gray-800 mb-2">{booking.customerName}</Text>
+                          <View className="flex-row gap-x-3">
+                            <View className="flex-row items-center">
+                              <MaterialIcons name="location-on" size={12} color="#1B7332" />
+                              <Text className="text-[12px] text-gray-500 ml-1">{booking.distance}</Text>
+                            </View>
+                            <View className="flex-row items-center">
+                              <MaterialIcons name="schedule" size={12} color="#1B7332" />
+                              <Text className="text-[12px] text-gray-500 ml-1">{booking.estimatedTime || '15 mins'}</Text>
+                            </View>
+                          </View>
+                        </View>
+                        <View className="items-end">
+                          <Text className="text-[20px] font-extrabold text-gray-800 mb-1">₹{booking.estimatedAmount}</Text>
+                          <View className="flex-row items-center bg-[#FFF8E1] px-1.5 py-1 rounded-md">
+                            <MaterialIcons name="stars" size={12} color="#FF9800" />
+                            <Text className="text-[12px] font-bold text-[#FF9800] ml-1">
+                              {creditService.calculateRequiredCredits(booking.estimatedAmount)}
                             </Text>
                           </View>
                         </View>
-                        
-                        <Text style={styles.customerName}>{booking.customerName}</Text>
-                        
-                        <View style={styles.quickInfo}>
-                          <View style={styles.infoItem}>
-                            <MaterialIcons name="location-on" size={12} color="#1B7332" />
-                            <Text style={styles.infoText}>{booking.distance}</Text>
-                          </View>
-                          <View style={styles.infoItem}>
-                            <MaterialIcons name="schedule" size={12} color="#1B7332" />
-                            <Text style={styles.infoText}>{booking.estimatedTime || '15 mins'}</Text>
-                          </View>
+                      </View>
+                      <View className="flex-row justify-between items-center py-2.5 border-t border-b border-gray-50 mb-3">
+                        <View className="flex-row items-center">
+                          <View className="w-1.5 h-1.5 rounded-full bg-[#4CAF50] mr-1.5" />
+                          <Text className="text-[12px] text-gray-500">Just now</Text>
                         </View>
-                      </View>
-                      
-                      <View style={styles.rightSection}>
-                        <Text style={styles.amount}>₹{booking.estimatedAmount}</Text>
-                        <View style={styles.creditBadge}>
-                          <MaterialIcons name="stars" size={12} color="#FF9800" />
-                          <Text style={styles.creditValue}>
-                            {creditService.calculateRequiredCredits(booking.estimatedAmount)}
-                          </Text>
-                        </View>
-                      </View>
-                    </View>
-                    
-                    {/* Time indicator at bottom */}
-                    <View style={styles.timeSection}>
-                      <View style={styles.timeInfo}>
-                        <View style={styles.urgencyDot} />
-                        <Text style={styles.timeText}>Just now</Text>
-                      </View>
-                      <TouchableOpacity 
-                        style={styles.viewDetailsBtn}
-                        onPress={() => handleBookingAction(booking.id, 'view')}
-                      >
-                        <Text style={styles.viewDetailsText}>View Details</Text>
-                        <MaterialIcons name="arrow-forward-ios" size={12} color="#1B7332" />
-                      </TouchableOpacity>
-                    </View>
-
-                    {/* Enhanced action bar - Call button removed */}
-                    <View style={styles.actionBar}>
-                      <View style={styles.mainActionsFullWidth}>
-                        <TouchableOpacity
-                          style={styles.declineBtnWider}
-                          onPress={() => handleBookingAction(booking.id, 'decline')}
-                          activeOpacity={0.8}
-                        >
-                          <Text style={styles.declineText}>Decline</Text>
+                        <TouchableOpacity className="flex-row items-center" onPress={() => handleBookingAction(booking.id, 'view')}>
+                          <Text className="text-[12px] text-[#1B7332] font-bold mr-1">View Details</Text>
+                          <MaterialIcons name="arrow-forward-ios" size={12} color="#1B7332" />
                         </TouchableOpacity>
-                        
-                        <TouchableOpacity
-                          style={styles.acceptBtn}
+                      </View>
+                      <View className="flex-row gap-x-2.5">
+                        <TouchableOpacity 
+                          className="flex-1 py-3 px-4 rounded-xl bg-gray-50 justify-center items-center border border-gray-100"
+                          onPress={() => handleBookingAction(booking.id, 'decline')}
+                        >
+                          <Text className="text-[15px] font-bold text-gray-500">Decline</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity 
+                          className="flex-[2] flex-row py-3 px-4 rounded-xl bg-[#1B7332] justify-center items-center"
                           onPress={() => handleBookingAction(booking.id, 'accept')}
-                          activeOpacity={0.8}
                         >
                           <MaterialIcons name="check-circle" size={16} color="white" />
-                          <Text style={styles.acceptText}>Accept</Text>
+                          <Text className="text-[15px] font-bold text-white ml-1.5">Accept</Text>
                         </TouchableOpacity>
                       </View>
-                    </View>
-                    
-
-                  </Animated.View>
-                ))
-              ) : (
-                <Animated.View style={[styles.emptyState, { opacity: fadeAnim }]}>
-                  <Animated.View style={[
-                    styles.emptyAnimation,
-                    { transform: [{ scale: fadeAnim }] }
-                  ]}>
-                    <View style={styles.emptyIconContainer}>
+                    </Animated.View>
+                  ))
+                ) : (
+                  <View className="items-center justify-center py-10 bg-white rounded-3xl border border-gray-50">
+                    <View className="w-20 h-20 rounded-full bg-[#F1F9F1] justify-center items-center mb-4 relative">
                       <MaterialIcons name="schedule" size={48} color="#1B7332" />
-                      <View style={styles.pulsingDot} />
+                      <View className="absolute top-5 right-5 w-3 h-3 rounded-full bg-[#1B7332] border-2 border-white" />
                     </View>
-                  </Animated.View>
-                  
-                  <Text style={styles.emptyTitle}>Ready for new pickups!</Text>
-                  <Text style={styles.emptySubtitle}>
-                    We'll notify you as soon as requests come in
-                  </Text>
-                  
-                  <View style={styles.emptyActions}>
-                    <TouchableOpacity
-                      style={[styles.refreshButton, isRefreshing && styles.refreshButtonLoading]}
+                    <Text className="text-[18px] font-bold text-gray-800 mb-2">Ready for new pickups!</Text>
+                    <Text className="text-[14px] text-gray-500 text-center px-10 mb-6 leading-5">
+                      We'll notify you as soon as requests come in
+                    </Text>
+                    <TouchableOpacity 
+                      className="flex-row items-center bg-[#1B7332] px-5 py-3 rounded-xl"
                       onPress={handleRefresh}
-                      disabled={isRefreshing}
-                      activeOpacity={0.8}
                     >
-                      <MaterialIcons 
-                        name={isRefreshing ? "hourglass-empty" : "refresh"} 
-                        size={18} 
-                        color="white" 
-                      />
-                      <Text style={styles.refreshButtonText}>
-                        {isRefreshing ? 'Checking...' : 'Check for updates'}
-                      </Text>
+                      <MaterialIcons name="refresh" size={18} color="white" />
+                      <Text className="text-white font-bold ml-2">Check for updates</Text>
                     </TouchableOpacity>
                   </View>
-                  
-                  <View style={styles.quickActions}>
-                    <TouchableOpacity 
-                      style={styles.quickAction}
-                      onPress={() => onNavigate('JobHistoryScreen')}
-                    >
-                      <MaterialIcons name="history" size={20} color="#1B7332" />
-                      <Text style={styles.quickActionText}>History</Text>
-                    </TouchableOpacity>
-                    
-                    <TouchableOpacity 
-                      style={styles.quickAction}
-                      onPress={() => onNavigate('ProfileScreen')}
-                    >
-                      <MaterialIcons name="person" size={20} color="#1B7332" />
-                      <Text style={styles.quickActionText}>Profile</Text>
-                    </TouchableOpacity>
-                    
-                    <TouchableOpacity 
-                      style={styles.quickAction}
-                      onPress={() => onNavigate('credit')}
-                    >
-                      <MaterialIcons name="account-balance-wallet" size={20} color="#1B7332" />
-                      <Text style={styles.quickActionText}>Credits</Text>
-                    </TouchableOpacity>
+                )}
+              </View>
+            </Animated.View>
+          ) : (
+            <View className="flex-1 pt-2">
+              {/* Wallet Warning Banner */}
+              <View className="bg-[#6b0f1a] rounded-3xl p-4 mb-6 relative overflow-hidden shadow-lg">
+                <View className="flex-row items-start pr-6">
+                  <View className="w-11 h-11 rounded-full bg-white/10 justify-center items-center mr-3.5">
+                    <MaterialIcons name="warning" size={28} color="#FFD700" />
                   </View>
-                </Animated.View>
-              )}
+                  <View className="flex-1">
+                    <Text className="text-[20px] font-bold text-white mb-1">Wallet balance low</Text>
+                    <Text className="text-[13px] text-white/80 leading-[18px] mb-3">
+                      Please add funds to your wallet to avoid suspension of your account.
+                    </Text>
+                    <View className="flex-row gap-x-1.5">
+                      <View className="w-5 h-1 rounded-full bg-white" />
+                      <View className="w-5 h-1 rounded-full bg-white/30" />
+                    </View>
+                  </View>
+                  <View className="bg-white/10 border border-[#FFC107] rounded-lg px-2 py-3 justify-center items-center min-w-[60px]">
+                    <Text className="text-white text-[16px] font-bold">-₹20</Text>
+                  </View>
+                </View>
+                <TouchableOpacity className="absolute top-2 right-2">
+                  <MaterialIcons name="cancel" size={24} color="rgba(255, 255, 255, 0.8)" />
+                </TouchableOpacity>
+              </View>
+
+              {/* Today's Overview */}
+              <View>
+                <Text className="text-[18px] font-bold text-gray-800 mb-4">Today's Overview</Text>
+                
+                <View className="gap-y-3">
+                  <View className="flex-row gap-x-3">
+                    <View className="flex-1 rounded-xl p-4 justify-center items-center min-h-[100px] border border-[#1B73321A] bg-[#F1F9F1]">
+                      <Text className="text-[32px] font-bold text-[#1B7332] mb-1">2</Text>
+                      <Text className="text-[14px] font-semibold text-[#1B7332]/70">Handled</Text>
+                    </View>
+                    <View className="flex-1 rounded-xl p-4 justify-center items-center min-h-[100px] border border-[#dc35451A] bg-[#FFF5F5]">
+                      <Text className="text-[32px] font-bold text-[#dc3545] mb-1">1</Text>
+                      <Text className="text-[14px] font-semibold text-[#dc3545]/70">Cancelled</Text>
+                    </View>
+                  </View>
+
+                  <View className="rounded-xl p-4 flex-row justify-between items-center min-h-[70px] border border-blue-100 bg-blue-50">
+                    <Text className="text-[15px] font-bold text-slate-600">Quantity Purchased</Text>
+                    <Text className="text-[18px] font-bold text-gray-800">
+                      12 <Text className="text-[14px] text-gray-600 font-normal">kg,</Text> 5 <Text className="text-[14px] text-gray-600 font-normal">pcs</Text>
+                    </Text>
+                  </View>
+
+                  <View className="rounded-xl p-4 flex-row justify-between items-center min-h-[70px] border border-blue-100 bg-blue-50">
+                    <Text className="text-[15px] font-bold text-slate-600">Purchase Amount</Text>
+                    <Text className="text-[18px] font-bold text-gray-800">₹ 850</Text>
+                  </View>
+                </View>
+              </View>
             </View>
-          </Animated.View>
+          )}
         </View>
       </ScrollView>
 
@@ -671,595 +650,4 @@ export default function Dashboard({ onBookingSelect, onShowToast, onNavigate }: 
   );
 }
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#1B7332', // Match header color to avoid gaps
-  },
-  scrollView: {
-    flex: 1,
-    backgroundColor: '#F7F9FC', // Content background
-  },
-  scrollContent: {
-    paddingBottom: 160, // Increased for proper scrolling clearance with bottom navigation and safe area
-  },
-  header: {
-    backgroundColor: '#1B7332',
-    paddingHorizontal: 16,
-    paddingTop: 44,
-    paddingBottom: 12,
-    borderBottomLeftRadius: 16,
-    borderBottomRightRadius: 16,
-    shadowColor: '#1B7332',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 4,
-    elevation: 4,
-    marginTop: -6, // Ensure no gap at top
-  },
-  headerContent: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    marginBottom: 8,
-  },
-  headerLeft: {
-    flex: 1,
-    paddingRight: 12,
-  },
-  headerRight: {
-    alignItems: 'flex-end',
-  },
-  greetingContainer: {
-    marginBottom: 8,
-  },
-  greeting: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: 'white',
-    marginBottom: 1,
-  },
-  userName: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: 'white',
-    marginBottom: 2,
-  },
-  readyText: {
-    fontSize: 14,
-    color: '#E8F5E8',
-    fontWeight: '500',
-  },
-  statusContainer: {
-    backgroundColor: 'rgba(255, 255, 255, 0.15)',
-    borderRadius: 16,
-    padding: 14,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.2)',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
-  },
-  statusLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flex: 1,
-  },
-  statusIconContainer: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 10,
-    position: 'relative',
-  },
-  onlineIndicator: {
-    position: 'absolute',
-    top: -2,
-    right: -2,
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: '#1B7332',
-    borderWidth: 1,
-    borderColor: 'white',
-  },
-  statusTextContainer: {
-    flex: 1,
-  },
-  statusTitleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  statusTitle: {
-    fontSize: 15,
-    fontWeight: 'bold',
-    color: 'white',
-  },
-  liveDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: '#00ff00',
-  },
-  statusSubtitle: {
-    fontSize: 11,
-    color: '#E8F5E8',
-    marginTop: 2,
-  },
-  toggleButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    borderRadius: 10,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 3,
-    elevation: 3,
-    minWidth: 90,
-    justifyContent: 'center',
-  },
-  toggleButtonOnline: {
-    backgroundColor: 'white',
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.3)',
-  },
-  toggleButtonOffline: {
-    backgroundColor: '#dc3545',
-    borderWidth: 1,
-    borderColor: 'rgba(220, 53, 69, 0.3)',
-  },
-  toggleButtonText: {
-    fontSize: 13,
-    fontWeight: 'bold',
-  },
-  toggleTextOnline: {
-    color: '#1B7332',
-  },
-  toggleTextOffline: {
-    color: 'white',
-  },
-  content: {
-    padding: 16,
-  },
-  bookingsContainer: {
-    backgroundColor: 'white',
-    borderRadius: 20,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.15,
-    shadowRadius: 12,
-    elevation: 8,
-    overflow: 'hidden',
-  },
-  enhancedBookingsContainer: {
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.18,
-    shadowRadius: 16,
-    elevation: 10,
-    borderWidth: 1,
-    borderColor: 'rgba(0, 0, 0, 0.03)',
-    transform: [{ translateY: -2 }],
-  },
-  bookingsHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    padding: 16,
-    backgroundColor: '#f8f9fa',
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(0, 0, 0, 0.05)',
-  },
-  bookingsHeaderLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flex: 1,
-  },
-  bookingsIconContainer: {
-    width: 32,
-    height: 32,
-    backgroundColor: '#E8F5E8',
-    borderRadius: 8,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 12,
-  },
-  bookingsTitle: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: '#333',
-    marginBottom: 2,
-  },
-  bookingsSubtitle: {
-    fontSize: 11,
-    color: '#6c757d',
-    fontWeight: '600',
-  },
-  bookingsList: {
-    padding: 16,
-  },
-  loadingContainer: {
-    gap: 16,
-  },
-  
-  // Enhanced booking card styles
-  bookingCard: {
-    backgroundColor: 'white',
-    borderRadius: 16, // Reduced from 20
-    padding: 0,
-    marginBottom: 12, // Reduced from 16
-    position: 'relative',
-    overflow: 'hidden',
-    minHeight: 140, // Reduced from 160
-  },
-  enhancedBookingCard: {
-    shadowColor: '#1B7332',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.12,
-    shadowRadius: 8,
-    elevation: 6,
-    borderWidth: 1,
-    borderColor: 'rgba(27, 115, 50, 0.08)',
-  },
-
-  
-  // Simplified card structure
-  cardHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    padding: 12, // Reduced from 16
-    paddingBottom: 8, // Reduced from 12
-  },
-  
-  leftSection: {
-    flex: 1,
-    paddingRight: 12,
-  },
-  
-  titleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 6,
-    gap: 6,
-    flexWrap: 'wrap',
-  },
-  
-  scrapType: {
-    fontSize: 15, // Reduced from 16
-    fontWeight: 'bold',
-    color: '#333',
-    flexShrink: 1,
-  },
-  
-  priorityBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 10,
-    gap: 2,
-    flexShrink: 0,
-  },
-  
-  priorityText: {
-    fontSize: 10,
-    fontWeight: 'bold',
-    color: 'white',
-  },
-  
-  customerName: {
-    fontSize: 14,
-    color: '#666',
-    fontWeight: '600',
-    marginBottom: 6,
-  },
-  
-  quickInfo: {
-    flexDirection: 'row',
-    gap: 12,
-    flexWrap: 'wrap',
-  },
-  
-  infoItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-  },
-  
-  infoText: {
-    fontSize: 12,
-    color: '#666',
-    fontWeight: '500',
-  },
-  
-  rightSection: {
-    alignItems: 'flex-end',
-    gap: 6,
-    minWidth: 80,
-  },
-  
-  amount: {
-    fontSize: 18, // Reduced from 20
-    fontWeight: 'bold',
-    color: '#1B7332',
-  },
-  
-  creditBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(255, 152, 0, 0.1)',
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 6,
-    gap: 2,
-  },
-  
-  creditValue: {
-    fontSize: 10,
-    color: '#FF9800',
-    fontWeight: 'bold',
-  },
-  
-  // Enhanced action bar
-  actionBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    backgroundColor: '#f8f9fa',
-    borderBottomLeftRadius: 20,
-    borderBottomRightRadius: 20,
-    gap: 10,
-  },
-  
-  quickCallButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: 'rgba(27, 115, 50, 0.1)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: 'rgba(27, 115, 50, 0.2)',
-  },
-  
-  mainActions: {
-    flex: 1,
-    flexDirection: 'row',
-    gap: 6,
-  },
-  
-  // New full-width main actions (without call button)
-  mainActionsFullWidth: {
-    flex: 1,
-    flexDirection: 'row',
-    gap: 8,
-  },
-  
-  declineBtn: {
-    flex: 1,
-    backgroundColor: 'white',
-    borderWidth: 1.5,
-    borderColor: '#dc3545',
-    borderRadius: 10,
-    paddingVertical: 10,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  
-  // Wider decline button (increased width)
-  declineBtnWider: {
-    flex: 1.5,
-    backgroundColor: 'white',
-    borderWidth: 1.5,
-    borderColor: '#dc3545',
-    borderRadius: 10,
-    paddingVertical: 10,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  
-  declineText: {
-    fontSize: 12,
-    fontWeight: 'bold',
-    color: '#dc3545',
-  },
-  
-  acceptBtn: {
-    flex: 2,
-    backgroundColor: '#1B7332',
-    borderRadius: 10,
-    paddingVertical: 10,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 4,
-    shadowColor: '#1B7332',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.3,
-    shadowRadius: 4,
-    elevation: 4,
-  },
-  
-  acceptText: {
-    fontSize: 12,
-    fontWeight: 'bold',
-    color: 'white',
-  },
-  
-  // Time section at bottom
-  timeSection: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderTopWidth: 1,
-    borderTopColor: 'rgba(0, 0, 0, 0.05)',
-  },
-  
-  timeInfo: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  
-  urgencyDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: '#ff4757',
-  },
-  
-  timeText: {
-    fontSize: 11,
-    color: '#666',
-    fontWeight: '500',
-  },
-  
-  viewDetailsBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-  },
-  
-  viewDetailsText: {
-    fontSize: 11,
-    color: '#1B7332',
-    fontWeight: '600',
-  },
-
-  
-  // Enhanced empty state
-  emptyState: {
-    alignItems: 'center',
-    paddingVertical: 40,
-    paddingHorizontal: 20,
-  },
-  
-  emptyAnimation: {
-    alignItems: 'center',
-    marginBottom: 20, // Reduced from 24
-  },
-  
-  emptyIconContainer: {
-    width: 64, // Reduced from 80
-    height: 64,
-    backgroundColor: 'rgba(27, 115, 50, 0.1)',
-    borderRadius: 32, // Reduced from 40
-    justifyContent: 'center',
-    alignItems: 'center',
-    position: 'relative',
-    borderWidth: 2, // Reduced from 3
-    borderColor: 'rgba(27, 115, 50, 0.2)',
-  },
-  
-  pulsingDot: {
-    position: 'absolute',
-    top: 8,
-    right: 8,
-    width: 12,
-    height: 12,
-    borderRadius: 6,
-    backgroundColor: '#00ff00',
-  },
-  
-  emptyTitle: {
-    fontSize: 18, // Reduced from 20
-    fontWeight: 'bold',
-    color: '#333',
-    marginBottom: 6, // Reduced from 8
-    textAlign: 'center',
-  },
-  
-  emptySubtitle: {
-    fontSize: 14, // Reduced from 16
-    color: '#666',
-    textAlign: 'center',
-    marginBottom: 20, // Reduced from 24
-    lineHeight: 20, // Reduced from 22
-  },
-  
-  emptyActions: {
-    marginBottom: 32,
-  },
-  
-  refreshButton: {
-    backgroundColor: '#1B7332',
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 24,
-    paddingVertical: 14,
-    borderRadius: 12,
-    gap: 8,
-    shadowColor: '#1B7332',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 6,
-  },
-  
-  refreshButtonLoading: {
-    backgroundColor: '#666',
-  },
-  
-  refreshButtonText: {
-    color: 'white',
-    fontSize: 14,
-    fontWeight: 'bold',
-  },
-  
-  quickActions: {
-    flexDirection: 'row',
-    gap: 16,
-  },
-  
-  quickAction: {
-    alignItems: 'center',
-    backgroundColor: 'rgba(27, 115, 50, 0.05)',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderRadius: 12,
-    gap: 6,
-    borderWidth: 1,
-    borderColor: 'rgba(27, 115, 50, 0.1)',
-  },
-  
-  quickActionText: {
-    fontSize: 12,
-    color: '#1B7332',
-    fontWeight: '600',
-  },
-
-  // Sentry Test Button
-  sentryTestButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: 'rgba(255, 107, 53, 0.1)',
-    paddingVertical: 10,
-    paddingHorizontal: 16,
-    borderRadius: 8,
-    marginTop: 12,
-    gap: 6,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 107, 53, 0.3)',
-  },
-
-  sentryTestButtonText: {
-    fontSize: 13,
-    color: '#FF6B35',
-    fontWeight: '600',
-  },
-});
+const styles = StyleSheet.create({});

@@ -1,793 +1,295 @@
+import { MaterialIcons } from '@expo/vector-icons';
 import React, { useState, useEffect } from 'react';
 import {
-  View,
+  ScrollView,
   Text,
   TouchableOpacity,
-  StyleSheet,
-  ScrollView,
-  RefreshControl,
-  Animated,
-  Linking,
-  Alert,
-  StatusBar
+  View,
+  Modal,
+  StatusBar,
+  Animated
 } from 'react-native';
-import { MaterialIcons } from '@expo/vector-icons';
+import DatePicker from 'react-native-modern-datepicker';
 import { bookingStateService, AcceptedBooking } from '../../services/bookingStateService';
-import { BookingModal } from '../../components/ui';
-import { BookingRequest } from '../../types';
-
-interface Job {
-  id: string;
-  customerName: string;
-  location: string;
-  time: string;
-  date: string;
-  status: 'upcoming' | 'pending' | 'followup' | 'completed' | 'cancelled';
-  isRepeat?: boolean;
-  scrapType: string;
-  estimatedAmount: number;
-  customerPhone: string;
-  jobEndedReason?: string;
-  originalBookingId?: string; // For accepted bookings
-}
 
 interface JobManagementScreenProps {
   onBack: () => void;
   onNavigate: (screen: string) => void;
 }
 
-const JobManagementScreen = ({ onBack }: JobManagementScreenProps) => {
-  const [activeTab, setActiveTab] = useState<'upcoming' | 'pending' | 'followup' | 'completed' | 'cancelled'>('upcoming');
-  const [refreshing, setRefreshing] = useState(false);
+const JobManagementScreen = ({ onBack, onNavigate }: JobManagementScreenProps) => {
+  const [showCalendar, setShowCalendar] = useState(false);
+  const [selectedDate, setSelectedDate] = useState(new Date().toDateString());
   const [fadeAnim] = useState(new Animated.Value(0));
   const [slideAnim] = useState(new Animated.Value(30));
+  const [fromDate, setFromDate] = useState('21/02/2026');
+  const [toDate, setToDate] = useState('21/02/2026');
+  const [showFakeDatePicker, setShowFakeDatePicker] = useState<'from' | 'to' | null>(null);
+  
+  // Get accepted (upcoming) or in-progress bookings from service
   const [acceptedBookings, setAcceptedBookings] = useState<AcceptedBooking[]>([]);
-  const [selectedJob, setSelectedJob] = useState<Job | null>(null);
-  const [showJobModal, setShowJobModal] = useState(false);
-
-  // Mock data - replace with actual API calls
-  const [jobs] = useState<Job[]>([
-    {
-      id: '1',
-      customerName: 'Rajesh Kumar',
-      location: 'MG Road, Bangalore',
-      time: '10:00 am',
-      date: 'Today',
-      status: 'upcoming',
-      isRepeat: true,
-      scrapType: 'Mixed Scrap',
-      estimatedAmount: 450,
-      customerPhone: '+91 9876543210'
-    },
-    {
-      id: '2',
-      customerName: 'Priya Sharma',
-      location: 'Koramangala, Bangalore',
-      time: '11:20 am',
-      date: 'Today',
-      status: 'completed',
-      scrapType: 'Paper & Cardboard',
-      estimatedAmount: 320,
-      customerPhone: '+91 9876543211',
-      jobEndedReason: 'Job ended'
-    },
-    {
-      id: '3',
-      customerName: 'Amit Patel',
-      location: 'Electronic City, Bangalore',
-      time: '1:05 pm',
-      date: 'Today',
-      status: 'pending',
-      scrapType: 'Electronic Waste',
-      estimatedAmount: 680,
-      customerPhone: '+91 9876543212'
-    },
-    {
-      id: '4',
-      customerName: 'Sweta Kochar',
-      location: 'Royal Classic, Andheri (West), Mumbai',
-      time: '11:20 am',
-      date: 'Yesterday',
-      status: 'upcoming',
-      scrapType: 'Mixed Scrap',
-      estimatedAmount: 550,
-      customerPhone: '+91 9876543213'
-    },
-    {
-      id: '5',
-      customerName: 'Abhay Kamath',
-      location: 'Mumbai, Mahatma Jyotiba Phule Nagar',
-      time: '10:00 am',
-      date: 'Yesterday',
-      status: 'completed',
-      scrapType: 'Metal Scrap',
-      estimatedAmount: 750,
-      customerPhone: '+91 9876543214'
-    },
-    {
-      id: '6',
-      customerName: 'Sayali Naman',
-      location: 'Habitat Wing_a, Dhakoji Sethpada, Ambol',
-      time: '8:50 am',
-      date: 'Yesterday',
-      status: 'cancelled',
-      scrapType: 'Paper Waste',
-      estimatedAmount: 200,
-      customerPhone: '+91 9876543215',
-      jobEndedReason: 'Cancelled by customer'
-    }
-  ]);
 
   useEffect(() => {
-    // Load accepted bookings
-    const loadAcceptedBookings = () => {
+    const loadBookings = () => {
       const bookings = bookingStateService.getAcceptedBookings();
       setAcceptedBookings(bookings);
     };
 
-    loadAcceptedBookings();
-    
-    // Subscribe to booking updates
-    const unsubscribe = bookingStateService.subscribe(loadAcceptedBookings);
-    
-    // Animate in
+    loadBookings();
+    const unsubscribe = bookingStateService.subscribe(loadBookings);
+
     Animated.parallel([
       Animated.timing(fadeAnim, {
         toValue: 1,
-        duration: 300,
+        duration: 500,
         useNativeDriver: true,
       }),
       Animated.timing(slideAnim, {
         toValue: 0,
-        duration: 300,
+        duration: 400,
         useNativeDriver: true,
-      }),
+      })
     ]).start();
 
     return unsubscribe;
   }, []);
 
-  const handleCall = (phone: string, customerName: string) => {
-    Alert.alert(
-      '📞 Call Customer',
-      `Call ${customerName} at ${phone}?`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        { 
-          text: '📞 Call Now', 
-          onPress: () => {
-            try {
-              Linking.openURL(`tel:${phone}`);
-            } catch (error) {
-              Alert.alert('Error', 'Unable to make call');
-            }
-          }
-        }
-      ]
-    );
+  const handleDateSelect = (date: string) => {
+    setSelectedDate(date);
+    setShowCalendar(false);
+    // Logic to navigate or filter by date could go here
+    onNavigate?.('history'); // Navigate to history tab screen
   };
-
-  const handleNavigate = (location: string) => {
-    try {
-      const url = `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(location)}`;
-      Linking.openURL(url);
-    } catch (error) {
-      Alert.alert('Error', 'Unable to open navigation');
-    }
-  };
-
-  const handleJobCardPress = (job: Job) => {
-    setSelectedJob(job);
-    setShowJobModal(true);
-  };
-
-  const convertJobToBookingRequest = (job: Job): BookingRequest => {
-    return {
-      id: job.id,
-      customerName: job.customerName,
-      customerPhone: job.customerPhone,
-      address: job.location,
-      scrapType: job.scrapType,
-      estimatedAmount: job.estimatedAmount,
-      distance: '2.5 km', // Default distance
-      paymentMode: 'Cash',
-      createdAt: new Date(),
-      priority: 'medium',
-      customerRating: 4.5,
-      isVerified: true
-    };
-  };
-
-  const getFilteredJobs = () => {
-    // Get accepted bookings IDs to avoid duplicates
-    const acceptedBookingIds = acceptedBookings.map(b => b.id);
-    
-    // Filter mock jobs to exclude accepted bookings
-    const filteredMockJobs = jobs.filter(job => 
-      job.status === activeTab && !acceptedBookingIds.includes(job.id)
-    );
-    
-    // Get accepted bookings for current tab
-    const acceptedJobsForTab = acceptedBookings
-      .filter(booking => {
-        if (activeTab === 'upcoming') return booking.status === 'accepted';
-        if (activeTab === 'pending') return booking.status === 'in-progress';
-        if (activeTab === 'completed') return booking.status === 'completed';
-        return false;
-      })
-      .map(booking => ({
-        id: `accepted_${booking.id}`, // Unique prefix to avoid conflicts
-        customerName: booking.customerName,
-        location: booking.address,
-        time: new Date(booking.acceptedAt).toLocaleTimeString('en-US', { 
-          hour: 'numeric', 
-          minute: '2-digit',
-          hour12: true 
-        }),
-        date: 'Today',
-        status: activeTab,
-        scrapType: booking.scrapType,
-        estimatedAmount: booking.estimatedAmount,
-        customerPhone: booking.customerPhone,
-        isRepeat: false,
-        originalBookingId: booking.id // Keep original ID for status updates
-      })) as Job[];
-
-    return [...filteredMockJobs, ...acceptedJobsForTab];
-  };
-
-  const groupJobsByDate = (jobs: Job[]) => {
-    const grouped: { [key: string]: Job[] } = {};
-    jobs.forEach(job => {
-      if (!grouped[job.date]) {
-        grouped[job.date] = [];
-      }
-      grouped[job.date].push(job);
-    });
-    return grouped;
-  };
-
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'upcoming': return '#1B7332';
-      case 'pending': return '#FF9800';
-      case 'followup': return '#2196F3';
-      case 'completed': return '#28a745';
-      case 'cancelled': return '#dc3545';
-      default: return '#6c757d';
-    }
-  };
-
-  const getStatusIcon = (status: string) => {
-    switch (status) {
-      case 'upcoming': return 'schedule';
-      case 'pending': return 'hourglass-empty';
-      case 'followup': return 'follow-the-signs';
-      case 'completed': return 'check-circle';
-      case 'cancelled': return 'cancel';
-      default: return 'help';
-    }
-  };
-
-  const renderJobCard = (job: Job) => (
-    <TouchableOpacity
-      key={job.id}
-      style={[
-        styles.compactJobCard,
-        {
-          opacity: fadeAnim,
-          transform: [{ translateY: slideAnim }],
-          borderLeftColor: getStatusColor(job.status)
-        }
-      ]}
-      onPress={() => handleJobCardPress(job)}
-      activeOpacity={0.7}
-    >
-      {/* Status Strip */}
-      <View style={[styles.statusStrip, { backgroundColor: getStatusColor(job.status) }]} />
-      
-      {/* Compact Card Content */}
-      <View style={styles.compactCardContent}>
-        {/* Top Row - Status & Time */}
-        <View style={styles.topRow}>
-          <View style={styles.statusBadge}>
-            <MaterialIcons 
-              name={getStatusIcon(job.status)} 
-              size={12} 
-              color={getStatusColor(job.status)} 
-            />
-            <Text style={[styles.statusBadgeText, { color: getStatusColor(job.status) }]}>
-              {job.status.toUpperCase()}
-            </Text>
-          </View>
-          <Text style={styles.timeText}>{job.time}</Text>
-        </View>
-
-        {/* Main Content Row */}
-        <View style={styles.mainRow}>
-          <View style={styles.leftContent}>
-            <View style={styles.customerRow}>
-              <View style={styles.customerAvatar}>
-                <Text style={styles.customerInitial}>
-                  {job.customerName.charAt(0).toUpperCase()}
-                </Text>
-              </View>
-              <View style={styles.customerInfo}>
-                <Text style={styles.customerName}>{job.customerName}</Text>
-                <Text style={styles.scrapType}>{job.scrapType}</Text>
-              </View>
-            </View>
-          </View>
-          
-          <View style={styles.rightContent}>
-            <Text style={styles.earningsAmount}>₹{job.estimatedAmount}</Text>
-            <MaterialIcons name="chevron-right" size={20} color="#ccc" />
-          </View>
-        </View>
-
-        {/* Bottom Row - Location */}
-        <View style={styles.bottomRow}>
-          <MaterialIcons name="location-on" size={14} color="#666" />
-          <Text style={styles.locationText} numberOfLines={1}>
-            {job.location}
-          </Text>
-        </View>
-      </View>
-    </TouchableOpacity>
-  );
-
-  const filteredJobs = getFilteredJobs();
-  const groupedJobs = groupJobsByDate(filteredJobs);
-
-  const renderEmptyState = () => (
-    <Animated.View style={[styles.emptyState, { opacity: fadeAnim }]}>
-      <MaterialIcons 
-        name={
-          activeTab === 'upcoming' ? 'schedule' :
-          activeTab === 'pending' ? 'pending-actions' :
-          activeTab === 'followup' ? 'follow-the-signs' :
-          activeTab === 'completed' ? 'check-circle' : 'cancel'
-        } 
-        size={64} 
-        color="#e0e0e0" 
-      />
-      <Text style={styles.emptyTitle}>
-        {activeTab === 'followup' 
-          ? "You don't have any jobs to follow up on"
-          : `You don't have any ${activeTab} job${activeTab === 'pending' ? '' : 's'}`
-        }
-      </Text>
-    </Animated.View>
-  );
-
-  const tabs = [
-    { key: 'upcoming', label: 'Upcoming', count: getFilteredJobs().length },
-    { key: 'pending', label: 'In Progress', count: 0 },
-    { key: 'followup', label: 'Follow Up', count: 0 },
-    { key: 'completed', label: 'Completed', count: 0 },
-    { key: 'cancelled', label: 'Cancelled', count: 0 }
-  ];
 
   return (
-    <View style={styles.container}>
-      <StatusBar backgroundColor="#1B7332" barStyle="light-content" />
-      {/* Header */}
-      <View style={styles.header}>
-        <TouchableOpacity style={styles.backButton} onPress={onBack}>
-          <MaterialIcons name="arrow-back" size={24} color="white" />
-        </TouchableOpacity>
-        <View style={styles.headerContent}>
-          <Text style={styles.headerTitle}>Job Management</Text>
-          <Text style={styles.headerSubtitle}>Track all your pickups</Text>
-        </View>
-        <View style={styles.headerSpacer} />
+    <View className="flex-1 bg-white">
+      <StatusBar backgroundColor="white" barStyle="dark-content" />
+      
+      {/* Dynamic Header */}
+      <View className="px-6 pt-16 pb-4">
+        <Text className="text-[36px] font-bold text-gray-900 tracking-tight">
+          Duty Sessions
+        </Text>
       </View>
 
-      {/* Enhanced Tab Navigation */}
-      <View style={styles.enhancedTabContainer}>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.tabScrollContent}>
-          {tabs.map((tab) => (
-            <TouchableOpacity
-              key={tab.key}
-              style={[
-                styles.enhancedTab,
-                activeTab === tab.key && styles.enhancedActiveTab
-              ]}
-              onPress={() => setActiveTab(tab.key as any)}
-              activeOpacity={0.7}
-            >
-              <View style={styles.tabHeader}>
-                <MaterialIcons 
-                  name={
-                    tab.key === 'upcoming' ? 'schedule' :
-                    tab.key === 'pending' ? 'hourglass-empty' :
-                    tab.key === 'followup' ? 'follow-the-signs' :
-                    tab.key === 'completed' ? 'check-circle' : 'cancel'
-                  }
-                  size={14} 
-                  color={activeTab === tab.key ? '#fff' : '#1B7332'} 
-                />
-                <Text style={[
-                  styles.enhancedTabText,
-                  activeTab === tab.key && styles.enhancedActiveTabText
-                ]}>
-                  {tab.label}
-                </Text>
-                {tab.count > 0 && (
-                  <View style={[
-                    styles.enhancedTabBadge,
-                    activeTab === tab.key && styles.enhancedActiveTabBadge
-                  ]}>
-                    <Text style={[
-                      styles.enhancedTabBadgeText,
-                      activeTab === tab.key && styles.enhancedActiveTabBadgeText
-                    ]}>
-                      {tab.count}
-                    </Text>
-                  </View>
-                )}
-              </View>
-            </TouchableOpacity>
-          ))}
-        </ScrollView>
-      </View>
-
-      {/* Content */}
       <ScrollView 
-        style={styles.scrollView}
-        contentContainerStyle={styles.scrollContent}
-        refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={() => {}} />
-        }
+        className="flex-1 px-6"
+        contentContainerStyle={{ paddingBottom: 120 }}
+        showsVerticalScrollIndicator={false}
       >
-        {filteredJobs.length === 0 ? (
-          renderEmptyState()
-        ) : (
-          Object.entries(groupedJobs).map(([date, dateJobs]) => (
-            <View key={date} style={styles.dateGroup}>
-              <Text style={styles.dateHeader}>{date}</Text>
-              {dateJobs.map(renderJobCard)}
+        <Animated.View style={{ opacity: fadeAnim, transform: [{ translateY: slideAnim }] }}>
+          {acceptedBookings.length === 0 ? (
+            /* Empty State - Matches Screenshot Exactly */
+            <View className="items-center justify-center py-16">
+              <View className="w-56 h-56 rounded-full bg-[#E8F1FC] justify-center items-center mb-8 relative">
+                <View className="w-36 h-36 rounded-full bg-[#CCE1FA] justify-center items-center overflow-hidden">
+                  <MaterialIcons name="person" size={110} color="#85B7F2" />
+                </View>
+                <View className="absolute bottom-6 right-6 bg-white rounded-full p-2.5 shadow-md border border-[#D9E9FD]">
+                  <MaterialIcons name="schedule" size={36} color="#2575E6" />
+                </View>
+              </View>
+              <Text className="text-[26px] font-bold text-[#333] mb-2 text-center">
+                No duty session available
+              </Text>
+              <Text className="text-[16px] text-gray-400 text-center font-medium">
+                No duty session to show
+              </Text>
             </View>
-          ))
-        )}
+          ) : (
+            /* Upcoming / In Progress Sessions List */
+            <View className="mb-8">
+              <Text className="text-[18px] font-bold text-gray-800 mb-4">Active Sessions</Text>
+              {acceptedBookings.map((booking) => (
+                <View 
+                  key={booking.id} 
+                  className="bg-white rounded-3xl p-5 mb-4 border border-gray-100 shadow-sm"
+                >
+                  <View className="flex-row justify-between mb-3">
+                    <View>
+                      <Text className="text-[14px] font-bold text-[#1B7332] mb-1">{booking.scrapType}</Text>
+                      <Text className="text-[18px] font-bold text-gray-900">{booking.customerName}</Text>
+                    </View>
+                    <Text className="text-[18px] font-bold text-gray-900">₹{booking.estimatedAmount}</Text>
+                  </View>
+                  <View className="flex-row items-center border-t border-gray-50 pt-3">
+                    <MaterialIcons name="location-on" size={14} color="#666" />
+                    <Text className="text-[13px] text-gray-500 ml-1 flex-1" numberOfLines={1}>
+                      {booking.address}
+                    </Text>
+                    <TouchableOpacity 
+                      className="bg-[#1B7332] px-4 py-2 rounded-xl"
+                      onPress={() => onNavigate('JobDetails')}
+                    >
+                      <Text className="text-white font-bold text-[12px]">View</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              ))}
+            </View>
+          )}
+
+          {/* Past Duty Sessions Card */}
+          <View className="bg-white rounded-[28px] border border-gray-100 shadow-sm p-4 flex-row items-center justify-between mt-4">
+            <View className="flex-row items-center flex-1">
+              <View className="w-10 h-10 rounded-full bg-[#F5F5F5] border border-gray-100 justify-center items-center mr-2">
+                <View className="bg-[#E8F5E8] rounded-2xl relative">
+                   <MaterialIcons name="history" size={26} color="#1B7332" />
+              
+                </View>
+              </View>
+              <Text className="text-[22px] font-bold text-[#333]">
+                Past duty sessions
+              </Text>
+            </View>
+            <TouchableOpacity 
+              className="px-4 py-1 rounded-full border-2 border-[#1B7332] justify-center items-center"
+              onPress={() => setShowCalendar(true)}
+            >
+              <Text className="text-[18px] font-bold text-[#1B7332]">View</Text>
+            </TouchableOpacity>
+          </View>
+        </Animated.View>
       </ScrollView>
 
-      {/* Floating Help Button */}
-      <TouchableOpacity style={styles.helpButton}>
-        <MaterialIcons name="help" size={24} color="white" />
-        <Text style={styles.helpText}>Help</Text>
-      </TouchableOpacity>
+      {/* Date Selection Modal */}
+      <Modal
+        visible={showCalendar}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setShowCalendar(false)}
+      >
+        <View className="flex-1 justify-end bg-black/40">
+          {/* Dismiss overlay */}
+          <TouchableOpacity 
+            style={{ flex: 1 }} 
+            activeOpacity={1} 
+            onPress={() => setShowCalendar(false)} 
+          />
+          
+          <View className="bg-white rounded-t-3xl p-6 pt-8 pb-10 shadow-2xl mt-auto">
+            {/* Modal Header */}
+            <View className="flex-row justify-between items-center mb-6">
+              <Text className="text-[20px] font-bold text-gray-900">Select date</Text>
+              <Text className="text-[14px] text-gray-600">Today, 21 Feb</Text>
+            </View>
+            
+            <View className="border-b border-gray-100 mb-6" />
 
-      {/* Booking Modal */}
-      {selectedJob && (
-        <BookingModal
-          isVisible={showJobModal}
-          booking={convertJobToBookingRequest(selectedJob)}
-          onClose={() => {
-            setShowJobModal(false);
-            setSelectedJob(null);
-          }}
-          onAccept={() => {
-            // Job is already accepted, just close modal
-            setShowJobModal(false);
-            setSelectedJob(null);
-          }}
-          isAccepted={true} // Jobs in manage tab are already accepted
-        />
-      )}
+            {/* Filter Pills */}
+            <View className="flex-row flex-wrap gap-y-3 gap-x-2 mb-6">
+              {['Today', 'Yesterday', 'Last 7 Days', 'This month', 'Last Month', 'Past 6 months', 'This year', 'Lifetime'].map((option) => {
+                const isSelected = selectedDate === option; // Treating selectedDate as string filter
+                return (
+                  <TouchableOpacity
+                    key={option}
+                    onPress={() => setSelectedDate(option)}
+                    className={`px-4 py-2.5 rounded-full border ${
+                      isSelected 
+                        ? 'bg-[#1B7332] border-[#1B7332]' 
+                        : 'bg-white border-gray-200'
+                    }`}
+                  >
+                    <Text className={`text-[14px] font-medium ${
+                      isSelected ? 'text-white' : 'text-gray-700'
+                    }`}>
+                      {option}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+
+            {/* Or Divider */}
+            <View className="flex-row items-center mb-6">
+              <View className="flex-1 h-[1px] bg-gray-200" />
+              <Text className="mx-4 text-gray-400 text-[13px]">Or</Text>
+              <View className="flex-1 h-[1px] bg-gray-200" />
+            </View>
+
+            {/* Date Pickers */}
+            <View className="flex-row justify-between mb-8">
+              <View className="flex-1 mr-3">
+                <Text className="text-[13px] text-gray-600 mb-2">From</Text>
+                <TouchableOpacity 
+                  onPress={() => setShowFakeDatePicker('from')}
+                  className="border border-gray-300 rounded-xl px-4 py-3 flex-row items-center justify-between"
+                >
+                  <Text className="text-[15px] text-gray-800 flex-1">{fromDate}</Text>
+                  <MaterialIcons name="calendar-today" size={20} color="#666" />
+                </TouchableOpacity>
+              </View>
+
+              <View className="flex-1 ml-3">
+                <Text className="text-[13px] text-gray-600 mb-2">To</Text>
+                <TouchableOpacity 
+                  onPress={() => setShowFakeDatePicker('to')}
+                  className="border border-gray-300 rounded-xl px-4 py-3 flex-row items-center justify-between"
+                >
+                  <Text className="text-[15px] text-gray-800 flex-1">{toDate}</Text>
+                  <MaterialIcons name="calendar-today" size={20} color="#666" />
+                </TouchableOpacity>
+              </View>
+            </View>
+
+            {/* Done Button */}
+            <TouchableOpacity 
+              onPress={() => handleDateSelect(selectedDate)}
+              className="bg-[#1B7332] py-4 rounded-xl items-center mb-6"
+            >
+              <Text className="text-white text-[16px] font-bold">Done</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Fake Date Picker Modal */}
+      <Modal
+        visible={showFakeDatePicker !== null}
+        transparent={true}
+        animationType="slide"
+        onRequestClose={() => setShowFakeDatePicker(null)}
+      >
+        <View className="flex-1 justify-end bg-black/40">
+          <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={() => setShowFakeDatePicker(null)} />
+          <View className="bg-white px-5 pb-8 pt-5 rounded-t-3xl">
+            <View className="flex-row justify-between items-center mb-4">
+              <Text className="text-[18px] font-bold text-gray-900">
+                Select {showFakeDatePicker === 'from' ? 'From' : 'To'} Date
+              </Text>
+              <TouchableOpacity onPress={() => setShowFakeDatePicker(null)} className="p-2 bg-gray-100 rounded-full">
+                <MaterialIcons name="close" size={20} color="#444" />
+              </TouchableOpacity>
+            </View>
+
+            <DatePicker
+              options={{
+                backgroundColor: '#ffffff',
+                textHeaderColor: '#1B7332',
+                textDefaultColor: '#333333',
+                selectedTextColor: '#ffffff',
+                mainColor: '#1B7332',
+                textSecondaryColor: '#999999',
+                borderColor: 'rgba(122, 146, 165, 0.1)',
+              }}
+              isGregorian={true}
+              mode="calendar"
+              onSelectedChange={(date: string) => {
+                // format YYYY/MM/DD to DD/MM/YYYY for dummy consistency
+                const [year, month, day] = date.split('/');
+                const formattedDate = `${day}/${month}/${year}`;
+                if (showFakeDatePicker === 'from') setFromDate(formattedDate);
+                if (showFakeDatePicker === 'to') setToDate(formattedDate);
+                setShowFakeDatePicker(null);
+              }}
+              style={{ borderRadius: 10 }}
+            />
+          </View>
+        </View>
+      </Modal>
+
     </View>
   );
 };
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#1B7332', // Match header color to avoid gaps
-  },
-  header: {
-    backgroundColor: '#1B7332',
-    paddingTop: 50,
-    paddingBottom: 20,
-    paddingHorizontal: 16,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 4,
-    marginTop: -6, // Ensure no gap at top
-  },
-  backButton: {
-    padding: 8,
-    borderRadius: 8,
-    backgroundColor: 'rgba(255, 255, 255, 0.2)',
-  },
-  headerContent: {
-    flex: 1,
-    alignItems: 'center',
-  },
-  headerTitle: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: 'white',
-    marginBottom: 2,
-  },
-  headerSubtitle: {
-    fontSize: 12,
-    color: 'rgba(255, 255, 255, 0.8)',
-  },
-  headerSpacer: {
-    width: 40,
-  },
-  
-  // Enhanced Tab Navigation
-  enhancedTabContainer: {
-    backgroundColor: 'white',
-    paddingVertical: 8,
-    borderBottomWidth: 1,
-    borderBottomColor: '#f0f0f0',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 4,
-    elevation: 2,
-  },
-  
-  tabScrollContent: {
-    paddingHorizontal: 16,
-    gap: 12,
-  },
-  
-  enhancedTab: {
-    backgroundColor: '#f8f9fa',
-    borderRadius: 20,
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    minWidth: 90,
-    borderWidth: 1,
-    borderColor: 'rgba(27, 115, 50, 0.15)',
-  },
-  
-  enhancedActiveTab: {
-    backgroundColor: '#1B7332',
-    borderColor: '#1B7332',
-    shadowColor: '#1B7332',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 4,
-    elevation: 3,
-  },
-  
-  tabHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  
-  enhancedTabText: {
-    fontSize: 11,
-    fontWeight: '600',
-    color: '#1B7332',
-  },
-  
-  enhancedActiveTabText: {
-    color: 'white',
-  },
-  
-
-  
-  enhancedTabBadge: {
-    backgroundColor: '#dc3545',
-    borderRadius: 10,
-    minWidth: 18,
-    height: 18,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 6,
-  },
-  
-  enhancedActiveTabBadge: {
-    backgroundColor: 'rgba(255, 255, 255, 0.25)',
-  },
-  
-  enhancedTabBadgeText: {
-    color: 'white',
-    fontSize: 10,
-    fontWeight: 'bold',
-  },
-  
-  enhancedActiveTabBadgeText: {
-    color: 'white',
-  },
-
-  // Content
-  scrollView: {
-    flex: 1,
-    backgroundColor: '#f8f9fa', // Content background
-  },
-  scrollContent: {
-    padding: 12,
-    paddingBottom: 160,
-  },
-  dateGroup: {
-    marginBottom: 16,
-  },
-  dateHeader: {
-    fontSize: 14,
-    fontWeight: 'bold',
-    color: '#333',
-    marginBottom: 8,
-  },
-
-  // Compact Job Card
-  compactJobCard: {
-    backgroundColor: 'white',
-    borderRadius: 12,
-    marginBottom: 8,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.06,
-    shadowRadius: 4,
-    elevation: 3,
-    borderLeftWidth: 4,
-    overflow: 'hidden',
-    position: 'relative',
-  },
-
-  compactCardContent: {
-    padding: 12,
-    paddingLeft: 16,
-  },
-
-  topRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-
-  mainRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 6,
-  },
-
-  leftContent: {
-    flex: 1,
-  },
-
-  customerRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-
-  rightContent: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-
-  bottomRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-  },
-  
-  statusStrip: {
-    position: 'absolute',
-    left: 0,
-    top: 0,
-    bottom: 0,
-    width: 4,
-  },
-  
-  statusBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(27, 115, 50, 0.1)',
-    paddingHorizontal: 6,
-    paddingVertical: 3,
-    borderRadius: 8,
-    gap: 3,
-    alignSelf: 'flex-start',
-  },
-  
-  statusBadgeText: {
-    fontSize: 9,
-    fontWeight: 'bold',
-  },
-  
-  timeText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#666',
-  },
-  
-  customerAvatar: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: '#1B7332',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  
-  customerInitial: {
-    fontSize: 14,
-    fontWeight: 'bold',
-    color: 'white',
-  },
-  
-  customerInfo: {
-    flex: 1,
-  },
-  
-  customerName: {
-    fontSize: 14,
-    fontWeight: 'bold',
-    color: '#333',
-    marginBottom: 1,
-  },
-
-  scrapType: {
-    fontSize: 12,
-    color: '#666',
-    fontWeight: '500',
-  },
-  
-  earningsAmount: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: '#1B7332',
-  },
-  
-  locationText: {
-    fontSize: 12,
-    color: '#666',
-    flex: 1,
-  },
-
-  // Empty State
-  emptyState: {
-    alignItems: 'center',
-    paddingVertical: 40,
-    paddingHorizontal: 30,
-  },
-  emptyTitle: {
-    fontSize: 14,
-    color: '#6c757d',
-    textAlign: 'center',
-    marginTop: 12,
-    lineHeight: 20,
-  },
-
-  // Floating Help Button
-  helpButton: {
-    position: 'absolute',
-    bottom: 20,
-    right: 20,
-    backgroundColor: '#1B7332',
-    borderRadius: 28,
-    width: 56,
-    height: 56,
-    alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: '#1B7332',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 8,
-  },
-  helpText: {
-    color: 'white',
-    fontSize: 10,
-    fontWeight: 'bold',
-    marginTop: 2,
-  },
-});
 
 export default JobManagementScreen;

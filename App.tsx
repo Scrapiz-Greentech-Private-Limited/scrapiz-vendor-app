@@ -1,13 +1,12 @@
+import { PostHogProvider, usePostHog } from 'posthog-react-native';
 import React, { useState } from 'react';
 import { Alert, StatusBar, StyleSheet, View } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
-import { PostHogProvider, usePostHog } from 'posthog-react-native';
-import { posthog } from './src/config/posthog';
 import { AuthProvider, useAuth } from './hooks/useAuth';
+import { posthog } from './src/config/posthog';
 
 // Auth Screens
-import { SimpleLogin as LoginScreen } from './src/screens/auth';
-
+import { OTPVerify, Signup, SimpleLogin } from './src/screens/auth';
 // Main Screens
 import { Dashboard, EarningsScreen, ManageScreen } from './src/screens/main';
 
@@ -16,34 +15,58 @@ import { EditProfileScreen, PersonalInfoScreen, ProfileScreen } from './src/scre
 
 // Settings Screens
 import {
-    AboutScreen,
-    AppSettingsScreen,
-    ContactsScreen,
-    HelpSupportScreen,
-    LanguageScreen,
-    MoreMenuScreen,
-    NotificationsScreen,
-    PaymentSettingsScreen,
-    PrivacyScreen
+  AboutScreen,
+  AppSettingsScreen,
+  ContactsScreen,
+  HelpSupportScreen,
+  LanguageScreen,
+  MoreMenuScreen,
+  NotificationsScreen,
+  PaymentSettingsScreen,
+  PrivacyScreen
 } from './src/screens/settings';
 
 // Job Screens
 import {
-    ActiveJob,
-    BookingDetailsScreen,
-    FutureRequestsScreen,
-    JobCompletion,
-    JobHistoryScreen
+  ActiveJob,
+  BookingDetailsScreen,
+  DutySessionDetailsScreen,
+  FutureRequestsScreen,
+  JobCompletion,
+  JobHistoryScreen
 } from './src/screens/jobs';
 import JobManagementScreen from './src/screens/jobs/JobManagementScreen';
 
 // Credit Screens
 import { CreditScreen } from './src/screens/credit';
+// Onboarding Screens
+import { AddVehicleScreen, PersonalDetailsScreen } from './src/screens/onboarding';
+
 // Navigation & Common Components
 import * as Sentry from '@sentry/react-native';
 import { ErrorBoundary } from './src/components/common';
 import { BottomNavigation } from './src/components/navigation';
 import { ActiveJob as ActiveJobType, BookingRequest } from './src/types';
+
+// Font loading imports
+import {
+  NotoSans_400Regular,
+  NotoSans_700Bold,
+  useFonts
+} from '@expo-google-fonts/noto-sans';
+import {
+  RobotoSlab_400Regular,
+  RobotoSlab_700Bold
+} from '@expo-google-fonts/roboto-slab';
+import * as SplashScreen from 'expo-splash-screen';
+import { useEffect } from 'react';
+
+// Import global styles for NativeWind
+import "./global.css";
+
+// Prevent splash screen from hiding automatically while fonts are loading
+SplashScreen.preventAutoHideAsync();
+
 
 Sentry.init({
   dsn: 'https://676c8c0600d53ccec2da3d4a97fe54a9@o4510990813888512.ingest.us.sentry.io/4510990817951744',
@@ -82,7 +105,10 @@ Sentry.init({
 });
 
 const AppContent = () => {
-  const { user } = useAuth();
+  const { user, login } = useAuth();
+  const [authStep, setAuthStep] = useState('login'); 
+  const [onboardingStep, setOnboardingStep] = useState<'none' | 'personal' | 'vehicle'>('none');
+  const [tempPhone, setTempPhone] = useState('');
   const posthogClient = usePostHog();
   const [activeTab, setActiveTab] = useState('home');
   const [selectedBooking, setSelectedBooking] = useState<BookingRequest | null>(null);
@@ -141,8 +167,95 @@ const AppContent = () => {
     setActiveTab(screen);
   };
 
-  if (!user) {
-    return <LoginScreen />;
+ if (!user) {
+    if (authStep === 'login') {
+      return (
+        <SimpleLogin 
+          onNavigateSignup={() => setAuthStep('signup')} 
+          onNavigateOTP={(phone: string) => {
+            setTempPhone(phone);
+            setAuthStep('otp');
+          }}
+          onGoogleSuccess={async () => {
+            try {
+              // Dummy login for demo
+              await login('9999999999');
+              setOnboardingStep('personal');
+            } catch (err) {
+              Alert.alert('Error', 'Failed to sign in with Google');
+            }
+          }}
+        />
+      );
+    }
+    if (authStep === 'signup') {
+      return (
+        <Signup 
+          onNavigateLogin={() => setAuthStep('login')} 
+          onNavigateOTP={(phone: string) => {
+            setTempPhone(phone);
+            setAuthStep('otp');
+          }} 
+          onBack={() => setAuthStep('login')}
+          onGoogleSuccess={async () => {
+            try {
+              await login('9999999999');
+              setOnboardingStep('personal');
+            } catch (err) {
+              Alert.alert('Error', 'Failed to sign up with Google');
+            }
+          }}
+        />
+      );
+    }
+    if (authStep === 'otp') {
+      return (
+        <OTPVerify 
+          phone={tempPhone}
+          onBack={() => setAuthStep('login')} 
+          onSuccess={async () => {
+            try {
+              // This triggers the useAuth hook to set the user state
+              await login(tempPhone); 
+              // After login, show onboarding instead of direct dashboard
+              setOnboardingStep('personal');
+            } catch (err) {
+              Alert.alert('Error', 'Failed to verify OTP');
+            }
+          }}
+        />
+      );
+    }
+  }
+
+  // Handle Onboarding Flow
+  if (onboardingStep === 'personal') {
+    return (
+      <PersonalDetailsScreen 
+        onNext={(data) => {
+            console.log('Personal Details:', data);
+            if (data.hasVehicle) {
+                setOnboardingStep('vehicle');
+            } else {
+                setOnboardingStep('none');
+                setActiveTab('home');
+            }
+        }} 
+      />
+    );
+  }
+
+  if (onboardingStep === 'vehicle') {
+    return (
+      <AddVehicleScreen 
+        onBack={() => setOnboardingStep('personal')}
+        onComplete={(data) => {
+            console.log('Vehicle Details:', data);
+            setOnboardingStep('none');
+            setActiveTab('home');
+        }}
+      />
+    );
   }
 
   const renderContent = () => {
@@ -175,7 +288,9 @@ const AppContent = () => {
         return <AboutScreen onBack={handleBackToProfile} />;
       // Manage tab sub-screens
       case 'history':
-        return <JobHistoryScreen onBack={handleBackToManage} />;
+        return <JobHistoryScreen onBack={handleBackToManage} onNavigate={handleNavigate} />;
+      case 'duty-session-details':
+        return <DutySessionDetailsScreen onBack={() => setActiveTab('history')} />;
       case 'active-jobs-list':
         return <ActiveJob 
           job={{
@@ -376,6 +491,23 @@ const styles = StyleSheet.create({
 });
 
 export default Sentry.wrap(function App() {
+  const [fontsLoaded, fontError] = useFonts({
+    NotoSans_400Regular,
+    NotoSans_700Bold,
+    RobotoSlab_400Regular,
+    RobotoSlab_700Bold,
+  });
+
+  useEffect(() => {
+    if (fontsLoaded || fontError) {
+      SplashScreen.hideAsync();
+    }
+  }, [fontsLoaded, fontError]);
+
+  if (!fontsLoaded && !fontError) {
+    return null;
+  }
+
   return (
     <SafeAreaProvider>
       <PostHogProvider
@@ -401,7 +533,9 @@ export default Sentry.wrap(function App() {
       >
         <ErrorBoundary>
           <AuthProvider>
-            <AppContent />
+            <View className="flex-1 font-sans">
+              <AppContent />
+            </View>
           </AuthProvider>
         </ErrorBoundary>
       </PostHogProvider>

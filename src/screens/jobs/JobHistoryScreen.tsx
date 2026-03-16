@@ -1,449 +1,283 @@
 import React, { useState } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, ScrollView, TextInput } from 'react-native';
+import { View, Text, TouchableOpacity, ScrollView, Image, StatusBar, Modal } from 'react-native';
 import { MaterialIcons, Ionicons } from '@expo/vector-icons';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import DatePicker from 'react-native-modern-datepicker';
 
 interface JobHistoryScreenProps {
   onBack: () => void;
+  onNavigate?: (screen: string) => void;
 }
 
-interface JobRecord {
+interface PastSession {
   id: string;
-  date: string;
-  customerName: string;
-  scrapType: string;
-  amount: number;
-  status: 'completed' | 'cancelled';
-  rating?: number;
-  address: string;
-  weight: string;
+  driverName: string;
+  driverImage: string;
+  vehicleType: string;
+  vehicleNumber: string;
+  startTime: string;
+  endTime: string;
 }
 
-const jobHistory: JobRecord[] = [
+const dummySessions: PastSession[] = [
   {
-    id: 'JOB001',
-    date: '2024-12-11',
-    customerName: 'Priya Sharma',
-    scrapType: 'Mixed Scrap',
-    amount: 850,
-    status: 'completed',
-    rating: 5,
-    address: 'MG Road, Bangalore',
-    weight: '15 kg'
+    id: '1',
+    driverName: 'Rahul Kumar',
+    driverImage: 'https://i.pravatar.cc/150?img=11',
+    vehicleType: 'Access',
+    vehicleNumber: 'MH01DM8286',
+    startTime: '28 Jan, 12:15 PM',
+    endTime: '21 Feb, 8:06 PM',
   },
   {
-    id: 'JOB002',
-    date: '2024-12-10',
-    customerName: 'Rajesh Kumar',
-    scrapType: 'Paper & Cardboard',
-    amount: 420,
-    status: 'completed',
-    rating: 4,
-    address: 'Koramangala, Bangalore',
-    weight: '8 kg'
+    id: '2',
+    driverName: 'Amit Singh',
+    driverImage: 'https://i.pravatar.cc/150?img=12',
+    vehicleType: 'Access',
+    vehicleNumber: 'MH01DM8286',
+    startTime: '8 Jan, 10:40 AM',
+    endTime: '13 Jan, 12:00 PM',
   },
   {
-    id: 'JOB003',
-    date: '2024-12-10',
-    customerName: 'Anita Singh',
-    scrapType: 'Metal Scrap',
-    amount: 1200,
-    status: 'completed',
-    rating: 5,
-    address: 'Indiranagar, Bangalore',
-    weight: '12 kg'
-  },
-  {
-    id: 'JOB004',
-    date: '2024-12-09',
-    customerName: 'Vikram Patel',
-    scrapType: 'Electronics',
-    amount: 0,
-    status: 'cancelled',
-    address: 'Whitefield, Bangalore',
-    weight: '0 kg'
+    id: '3',
+    driverName: 'Rahul Kumar',
+    driverImage: 'https://i.pravatar.cc/150?img=11',
+    vehicleType: 'Access',
+    vehicleNumber: 'MH01DM8286',
+    startTime: '31 Dec, 8:04 PM',
+    endTime: '6 Jan, 10:17 AM',
   },
 ];
 
-const JobHistoryScreen = ({ onBack }: JobHistoryScreenProps) => {
-  const [searchQuery, setSearchQuery] = useState('');
-  const [filterStatus, setFilterStatus] = useState<'all' | 'completed' | 'cancelled'>('all');
+const JobHistoryScreen = ({ onBack, onNavigate }: JobHistoryScreenProps) => {
+  const [selectedFilter, setSelectedFilter] = useState('Last Month');
+  const [showCalendar, setShowCalendar] = useState(false);
+  const [fromDate, setFromDate] = useState('21/02/2026');
+  const [toDate, setToDate] = useState('21/02/2026');
+  const [showFakeDatePicker, setShowFakeDatePicker] = useState<'from' | 'to' | null>(null);
 
-  const filteredJobs = jobHistory.filter(job => {
-    const matchesSearch = job.customerName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                         job.scrapType.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                         job.id.toLowerCase().includes(searchQuery.toLowerCase());
-    const matchesFilter = filterStatus === 'all' || job.status === filterStatus;
-    return matchesSearch && matchesFilter;
-  });
-
-  const renderStars = (rating?: number) => {
-    if (!rating) return null;
-    return (
-      <View style={styles.starsContainer}>
-        {[1, 2, 3, 4, 5].map((star) => (
-          <Ionicons
-            key={star}
-            name={star <= rating ? 'star' : 'star-outline'}
-            size={14}
-            color={star <= rating ? '#FFD700' : '#E0E0E0'}
-          />
-        ))}
-      </View>
-    );
+  const handleDateSelect = (date: string) => {
+    setSelectedFilter(date);
+    setShowCalendar(false);
   };
 
-  const renderJobCard = (job: JobRecord) => (
-    <View key={job.id} style={styles.jobCard}>
-      <View style={styles.jobHeader}>
-        <View style={styles.jobIdContainer}>
-          <Text style={styles.jobId}>{job.id}</Text>
-          <View style={[
-            styles.statusBadge,
-            { backgroundColor: job.status === 'completed' ? '#E8F5E8' : '#FFEBEE' }
-          ]}>
-            <Text style={[
-              styles.statusText,
-              { color: job.status === 'completed' ? '#28a745' : '#dc3545' }
-            ]}>
-              {job.status === 'completed' ? 'Completed' : 'Cancelled'}
-            </Text>
-          </View>
-        </View>
-        <Text style={styles.jobDate}>{new Date(job.date).toLocaleDateString()}</Text>
+  const renderSessionCard = (session: PastSession) => (
+    <TouchableOpacity 
+      key={session.id} 
+      className="bg-white rounded-xl mb-4 p-4 border border-gray-100 shadow-sm"
+      onPress={() => onNavigate?.('duty-session-details')}
+    >
+      <View className="flex-row items-center border-b border-gray-100 pb-3 mb-3">
+        <Image 
+          source={{ uri: session.driverImage }} 
+          className="w-12 h-12 rounded-full mr-3 grayscale opacity-80"
+        />
+        <Text className="text-[16px] font-bold text-gray-800">{session.driverName}</Text>
       </View>
-
-      <View style={styles.jobContent}>
-        <View style={styles.customerInfo}>
-          <MaterialIcons name="person" size={16} color="#6c757d" />
-          <Text style={styles.customerName}>{job.customerName}</Text>
-        </View>
-
-        <View style={styles.jobDetails}>
-          <View style={styles.detailRow}>
-            <MaterialIcons name="category" size={16} color="#6c757d" />
-            <Text style={styles.detailText}>{job.scrapType}</Text>
+      
+      <View className="flex-row items-center justify-between">
+        <View className="flex-row items-center">
+          <View className="w-10 h-10 rounded-full bg-gray-50 items-center justify-center border border-gray-100 mr-3">
+            <MaterialIcons name="two-wheeler" size={20} color="#9ca3af" />
           </View>
-          <View style={styles.detailRow}>
-            <MaterialIcons name="location-on" size={16} color="#6c757d" />
-            <Text style={styles.detailText}>{job.address}</Text>
-          </View>
-          <View style={styles.detailRow}>
-            <MaterialIcons name="scale" size={16} color="#6c757d" />
-            <Text style={styles.detailText}>{job.weight}</Text>
+          <View>
+            <Text className="text-[14px] font-bold text-gray-800">{session.vehicleType}</Text>
+            <Text className="text-[12px] text-gray-500">{session.vehicleNumber}</Text>
           </View>
         </View>
-
-        <View style={styles.jobFooter}>
-          <View style={styles.amountContainer}>
-            <Text style={styles.amountLabel}>Amount:</Text>
-            <Text style={[
-              styles.amountValue,
-              { color: job.status === 'completed' ? '#28a745' : '#6c757d' }
-            ]}>
-              {job.status === 'completed' ? `₹${job.amount}` : 'N/A'}
-            </Text>
-          </View>
-          {job.rating && renderStars(job.rating)}
+        <View className="items-end">
+          <Text className="text-[12px] text-gray-500 mb-1">
+            Started : <Text className="text-gray-700">{session.startTime}</Text>
+          </Text>
+          <Text className="text-[12px] text-gray-500">
+            Ended : <Text className="text-gray-700">{session.endTime}</Text>
+          </Text>
         </View>
       </View>
-    </View>
+    </TouchableOpacity>
   );
 
   return (
-    <View style={styles.container}>
+    <SafeAreaView className="flex-1 bg-[#F8F9FA]" edges={['top', 'bottom']}>
+      <StatusBar barStyle="dark-content" backgroundColor="#F8F9FA" />
+      
       {/* Header */}
-      <View style={styles.header}>
-        <TouchableOpacity onPress={onBack} style={styles.backButton}>
-          <Ionicons name="arrow-back" size={24} color="white" />
+      <View className="px-5 pt-4 pb-2 flex-row items-center">
+        <TouchableOpacity onPress={onBack} className="p-2 mr-2">
+          <Ionicons name="chevron-back" size={24} color="#333" />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Job History</Text>
-        <View style={styles.headerSpacer} />
+        <Text className="text-[28px] font-bold text-gray-900 tracking-tight flex-1">
+          Past Duty Sessions
+        </Text>
       </View>
 
-      {/* Search and Filter */}
-      <View style={styles.searchContainer}>
-        <View style={styles.searchInputContainer}>
-          <MaterialIcons name="search" size={20} color="#6c757d" />
-          <TextInput
-            style={styles.searchInput}
-            placeholder="Search jobs..."
-            value={searchQuery}
-            onChangeText={setSearchQuery}
-          />
-        </View>
+      {/* Filter Selector */}
+      <View className="flex-row items-center justify-center py-4">
+        <TouchableOpacity className="w-10 h-10 bg-white rounded-full items-center justify-center border border-gray-100 shadow-sm">
+          <Ionicons name="arrow-back" size={18} color="#666" />
+        </TouchableOpacity>
         
-        <View style={styles.filterContainer}>
-          {(['all', 'completed', 'cancelled'] as const).map((status) => (
-            <TouchableOpacity
-              key={status}
-              onPress={() => setFilterStatus(status)}
-              style={[
-                styles.filterButton,
-                filterStatus === status && styles.filterButtonActive
-              ]}
-            >
-              <Text style={[
-                styles.filterButtonText,
-                filterStatus === status && styles.filterButtonTextActive
-              ]}>
-                {status.charAt(0).toUpperCase() + status.slice(1)}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </View>
+        <TouchableOpacity 
+          onPress={() => setShowCalendar(true)}
+          className="mx-3 px-5 py-2.5 bg-white rounded-full border border-gray-200 shadow-sm flex-row items-center"
+        >
+          <Text className="text-[15px] font-medium text-gray-800 mr-2">{selectedFilter}</Text>
+          <Ionicons name="chevron-down" size={16} color="#666" />
+        </TouchableOpacity>
+
+        <TouchableOpacity className="w-10 h-10 bg-white rounded-full items-center justify-center border border-gray-100 shadow-sm opacity-50">
+          <Ionicons name="arrow-forward" size={18} color="#666" />
+        </TouchableOpacity>
       </View>
 
-      {/* Job List */}
-      <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent}>
-        <View style={styles.statsContainer}>
-          <View style={styles.statCard}>
-            <Text style={styles.statValue}>{jobHistory.filter(j => j.status === 'completed').length}</Text>
-            <Text style={styles.statLabel}>Completed</Text>
-          </View>
-          <View style={styles.statCard}>
-            <Text style={styles.statValue}>₹{jobHistory.filter(j => j.status === 'completed').reduce((sum, j) => sum + j.amount, 0)}</Text>
-            <Text style={styles.statLabel}>Total Earned</Text>
-          </View>
-          <View style={styles.statCard}>
-            <Text style={styles.statValue}>{jobHistory.filter(j => j.status === 'cancelled').length}</Text>
-            <Text style={styles.statLabel}>Cancelled</Text>
-          </View>
-        </View>
-
-        <View style={styles.jobsList}>
-          {filteredJobs.length > 0 ? (
-            filteredJobs.map(renderJobCard)
-          ) : (
-            <View style={styles.emptyState}>
-              <MaterialIcons name="history" size={48} color="#E0E0E0" />
-              <Text style={styles.emptyStateText}>No jobs found</Text>
-              <Text style={styles.emptyStateSubtext}>
-                {searchQuery ? 'Try adjusting your search' : 'Your job history will appear here'}
-              </Text>
-            </View>
-          )}
-        </View>
+      {/* List */}
+      <ScrollView 
+        className="flex-1 px-5 pt-2"
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={{ paddingBottom: 40 }}
+      >
+        {dummySessions.map(renderSessionCard)}
+        {dummySessions.map(session => renderSessionCard({...session, id: session.id + '_dup'}))}
       </ScrollView>
-    </View>
+
+      {/* Date Selection Modal */}
+      <Modal
+        visible={showCalendar}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setShowCalendar(false)}
+      >
+        <View className="flex-1 justify-end bg-black/40">
+          {/* Dismiss overlay */}
+          <TouchableOpacity 
+            style={{ flex: 1 }} 
+            activeOpacity={1} 
+            onPress={() => setShowCalendar(false)} 
+          />
+          
+          <View className="bg-white rounded-t-3xl p-6 pt-8 pb-10 shadow-2xl mt-auto">
+            {/* Modal Header */}
+            <View className="flex-row justify-between items-center mb-6">
+              <Text className="text-[20px] font-bold text-gray-900">Select date</Text>
+              <Text className="text-[14px] text-gray-600">Today, 21 Feb</Text>
+            </View>
+            
+            <View className="border-b border-gray-100 mb-6" />
+
+            {/* Filter Pills */}
+            <View className="flex-row flex-wrap gap-y-3 gap-x-2 mb-6">
+              {['Today', 'Yesterday', 'Last 7 Days', 'This month', 'Last Month', 'Past 6 months', 'This year', 'Lifetime'].map((option) => {
+                const isSelected = selectedFilter === option; // Treating selectedDate as string filter
+                return (
+                  <TouchableOpacity
+                    key={option}
+                    onPress={() => setSelectedFilter(option)}
+                    className={`px-4 py-2.5 rounded-full border ${
+                      isSelected 
+                        ? 'bg-[#1B7332] border-[#1B7332]' 
+                        : 'bg-white border-gray-200'
+                    }`}
+                  >
+                    <Text className={`text-[14px] font-medium ${
+                      isSelected ? 'text-white' : 'text-gray-700'
+                    }`}>
+                      {option}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+
+            {/* Or Divider */}
+            <View className="flex-row items-center mb-6">
+              <View className="flex-1 h-[1px] bg-gray-200" />
+              <Text className="mx-4 text-gray-400 text-[13px]">Or</Text>
+              <View className="flex-1 h-[1px] bg-gray-200" />
+            </View>
+
+            {/* Date Pickers */}
+            <View className="flex-row justify-between mb-8">
+              <View className="flex-1 mr-3">
+                <Text className="text-[13px] text-gray-600 mb-2">From</Text>
+                <TouchableOpacity 
+                   onPress={() => setShowFakeDatePicker('from')}
+                   className="border border-gray-300 rounded-xl px-4 py-3 flex-row items-center justify-between"
+                >
+                  <Text className="text-[15px] text-gray-800 flex-1">{fromDate}</Text>
+                  <MaterialIcons name="calendar-today" size={20} color="#666" />
+                </TouchableOpacity>
+              </View>
+
+              <View className="flex-1 ml-3">
+                <Text className="text-[13px] text-gray-600 mb-2">To</Text>
+                <TouchableOpacity 
+                   onPress={() => setShowFakeDatePicker('to')}
+                   className="border border-gray-300 rounded-xl px-4 py-3 flex-row items-center justify-between"
+                >
+                  <Text className="text-[15px] text-gray-800 flex-1">{toDate}</Text>
+                  <MaterialIcons name="calendar-today" size={20} color="#666" />
+                </TouchableOpacity>
+              </View>
+            </View>
+
+            {/* Done Button */}
+            <TouchableOpacity 
+              onPress={() => handleDateSelect(selectedFilter)}
+              className="bg-[#1B7332] py-4 rounded-xl items-center mb-6"
+            >
+              <Text className="text-white text-[16px] font-bold">Done</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Fake Date Picker Modal */}
+      <Modal
+        visible={showFakeDatePicker !== null}
+        transparent={true}
+        animationType="slide"
+        onRequestClose={() => setShowFakeDatePicker(null)}
+      >
+        <View className="flex-1 justify-end bg-black/40">
+          <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={() => setShowFakeDatePicker(null)} />
+          <View className="bg-white px-5 pb-8 pt-5 rounded-t-3xl">
+            <View className="flex-row justify-between items-center mb-4">
+              <Text className="text-[18px] font-bold text-gray-900">
+                Select {showFakeDatePicker === 'from' ? 'From' : 'To'} Date
+              </Text>
+              <TouchableOpacity onPress={() => setShowFakeDatePicker(null)} className="p-2 bg-gray-100 rounded-full">
+                <MaterialIcons name="close" size={20} color="#444" />
+              </TouchableOpacity>
+            </View>
+
+            <DatePicker
+              options={{
+                backgroundColor: '#ffffff',
+                textHeaderColor: '#1B7332',
+                textDefaultColor: '#333333',
+                selectedTextColor: '#ffffff',
+                mainColor: '#1B7332',
+                textSecondaryColor: '#999999',
+                borderColor: 'rgba(122, 146, 165, 0.1)',
+              }}
+              isGregorian={true}
+              mode="calendar"
+              onSelectedChange={(date: string) => {
+                // format YYYY/MM/DD to DD/MM/YYYY for dummy consistency
+                const [year, month, day] = date.split('/');
+                const formattedDate = `${day}/${month}/${year}`;
+                if (showFakeDatePicker === 'from') setFromDate(formattedDate);
+                if (showFakeDatePicker === 'to') setToDate(formattedDate);
+                setShowFakeDatePicker(null);
+              }}
+              style={{ borderRadius: 10 }}
+            />
+          </View>
+        </View>
+      </Modal>
+
+    </SafeAreaView>
   );
 };
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#F7F9FC',
-  },
-  header: {
-    backgroundColor: '#28a745',
-    paddingHorizontal: 16,
-    paddingTop: 44,
-    paddingBottom: 16,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  backButton: {
-    padding: 8,
-    borderRadius: 8,
-  },
-  headerTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: 'white',
-    flex: 1,
-    textAlign: 'center',
-  },
-  headerSpacer: {
-    width: 40,
-  },
-  searchContainer: {
-    padding: 16,
-    backgroundColor: 'white',
-    borderBottomWidth: 1,
-    borderBottomColor: '#E0E0E0',
-  },
-  searchInputContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#F8F9FA',
-    borderRadius: 12,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    marginBottom: 12,
-  },
-  searchInput: {
-    flex: 1,
-    marginLeft: 8,
-    fontSize: 16,
-    color: '#333',
-  },
-  filterContainer: {
-    flexDirection: 'row',
-    gap: 8,
-  },
-  filterButton: {
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 20,
-    backgroundColor: '#F8F9FA',
-    borderWidth: 1,
-    borderColor: '#E0E0E0',
-  },
-  filterButtonActive: {
-    backgroundColor: '#28a745',
-    borderColor: '#28a745',
-  },
-  filterButtonText: {
-    fontSize: 14,
-    color: '#6c757d',
-    fontWeight: '600',
-  },
-  filterButtonTextActive: {
-    color: 'white',
-  },
-  scrollView: {
-    flex: 1,
-  },
-  scrollContent: {
-    paddingBottom: 120,
-  },
-  statsContainer: {
-    flexDirection: 'row',
-    padding: 16,
-    gap: 12,
-  },
-  statCard: {
-    flex: 1,
-    backgroundColor: 'white',
-    borderRadius: 12,
-    padding: 16,
-    alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.08,
-    shadowRadius: 3,
-    elevation: 2,
-  },
-  statValue: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: '#28a745',
-    marginBottom: 4,
-  },
-  statLabel: {
-    fontSize: 12,
-    color: '#6c757d',
-    fontWeight: '600',
-  },
-  jobsList: {
-    paddingHorizontal: 16,
-  },
-  jobCard: {
-    backgroundColor: 'white',
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 12,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.08,
-    shadowRadius: 3,
-    elevation: 2,
-  },
-  jobHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 12,
-  },
-  jobIdContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  jobId: {
-    fontSize: 14,
-    fontWeight: 'bold',
-    color: '#333',
-  },
-  statusBadge: {
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 12,
-  },
-  statusText: {
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  jobDate: {
-    fontSize: 12,
-    color: '#6c757d',
-  },
-  jobContent: {
-    gap: 12,
-  },
-  customerInfo: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  customerName: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#333',
-  },
-  jobDetails: {
-    gap: 8,
-  },
-  detailRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  detailText: {
-    fontSize: 14,
-    color: '#6c757d',
-  },
-  jobFooter: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingTop: 12,
-    borderTopWidth: 1,
-    borderTopColor: '#F0F0F0',
-  },
-  amountContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  amountLabel: {
-    fontSize: 14,
-    color: '#6c757d',
-  },
-  amountValue: {
-    fontSize: 16,
-    fontWeight: 'bold',
-  },
-  starsContainer: {
-    flexDirection: 'row',
-    gap: 2,
-  },
-  emptyState: {
-    alignItems: 'center',
-    paddingVertical: 48,
-  },
-  emptyStateText: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#6c757d',
-    marginTop: 16,
-    marginBottom: 8,
-  },
-  emptyStateSubtext: {
-    fontSize: 14,
-    color: '#9ca3af',
-    textAlign: 'center',
-  },
-});
 
 export default JobHistoryScreen;
