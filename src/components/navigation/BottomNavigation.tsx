@@ -3,6 +3,7 @@ import { View, TouchableOpacity, Text, StyleSheet, Platform } from 'react-native
 import { MaterialIcons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { useLanguage } from '../../utils/i18n';
 
 interface BottomNavigationProps {
   activeTab: string;
@@ -16,6 +17,7 @@ interface BottomNavigationProps {
 
 const BottomNavigation = ({ activeTab, onTabChange, jobCounts }: BottomNavigationProps) => {
   const insets = useSafeAreaInsets();
+  const { t } = useLanguage();
   
   // Simplified and more compact safe area calculation
   const compactBottomPadding = Platform.OS === 'android' 
@@ -23,14 +25,14 @@ const BottomNavigation = ({ activeTab, onTabChange, jobCounts }: BottomNavigatio
     : Math.max(insets.bottom, 8); // iOS safe area
   
   const tabs = [
-    { key: 'home', label: 'Home', icon: 'home' },
+    { key: 'home', label: t('home'), icon: 'home' },
     { 
       key: 'ongoing', 
-      label: 'Manage', 
+      label: t('manage'), 
       icon: 'work'
     },
-    { key: 'earnings', label: 'Target', icon: 'trending-up' },
-    { key: 'profile', label: 'Profile', icon: 'person' }
+    { key: 'profile', label: t('profile'), icon: 'person' },
+    { key: 'more-menu', label: t('more_tabs'), icon: 'more-horiz' }
   ];
 
   return (

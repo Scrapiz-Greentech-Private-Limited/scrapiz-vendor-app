@@ -3,6 +3,7 @@ export interface User {
   name: string;
   phone: string;
   isOnline: boolean;
+  image?: string;
 }
 
 export interface BookingRequest {

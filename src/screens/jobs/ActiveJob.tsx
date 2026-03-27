@@ -10,6 +10,7 @@ import {
 } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 import { ActiveJob as ActiveJobType } from '../../types';
+import { useLanguage } from '../../utils/i18n';
 
 interface ActiveJobProps {
   job: ActiveJobType;
@@ -20,6 +21,7 @@ interface ActiveJobProps {
 }
 
 const ActiveJob = ({ job, onStatusUpdate, onCompleteJob, onBack, onShowToast }: ActiveJobProps) => {
+  const { t } = useLanguage();
   const [currentStatus, setCurrentStatus] = useState<ActiveJobType['status']>(job.status || 'on-the-way');
   const [isLoading, setIsLoading] = useState(false);
   const [fadeAnim] = useState(new Animated.Value(0));
@@ -28,27 +30,27 @@ const ActiveJob = ({ job, onStatusUpdate, onCompleteJob, onBack, onShowToast }: 
   const statusSteps = [
     { 
       value: 'on-the-way', 
-      label: 'On the Way', 
+      label: t('on_the_way'), 
       icon: 'directions-car',
-      description: 'Heading to pickup location'
+      description: t('heading_pickup')
     },
     { 
       value: 'arrived', 
-      label: 'Arrived', 
+      label: t('arrived'), 
       icon: 'location-on',
-      description: 'Reached customer location'
+      description: t('reached_customer')
     },
     { 
       value: 'in-progress', 
-      label: 'Collecting', 
+      label: t('collecting'), 
       icon: 'inventory',
-      description: 'Weighing and collecting scrap'
+      description: t('weighing_collecting')
     },
     { 
       value: 'completed', 
-      label: 'Ready', 
+      label: t('ready'), 
       icon: 'check-circle',
-      description: 'Ready for completion'
+      description: t('ready_completion')
     },
   ];
 
@@ -100,7 +102,7 @@ const ActiveJob = ({ job, onStatusUpdate, onCompleteJob, onBack, onShowToast }: 
   const handleCall = () => {
     try {
       Linking.openURL(`tel:${job.customerPhone}`);
-      onShowToast('📞 Calling customer...', 'info');
+      onShowToast(`📞 ${t('calling_customer')}`, 'info');
     } catch (error) {
       console.error('Error making call:', error);
       onShowToast('❌ Unable to make call', 'error');
@@ -111,7 +113,7 @@ const ActiveJob = ({ job, onStatusUpdate, onCompleteJob, onBack, onShowToast }: 
     try {
       const url = `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(job.address)}`;
       Linking.openURL(url);
-      onShowToast('🗺️ Opening navigation...', 'info');
+      onShowToast(`🗺️ ${t('opening_navigation')}`, 'info');
     } catch (error) {
       console.error('Error opening navigation:', error);
       onShowToast('❌ Unable to open navigation', 'error');
@@ -126,7 +128,7 @@ const ActiveJob = ({ job, onStatusUpdate, onCompleteJob, onBack, onShowToast }: 
           <MaterialIcons name="arrow-back" size={24} color="white" />
         </TouchableOpacity>
         <View style={styles.headerContent}>
-          <Text style={styles.headerTitle}>Active Job</Text>
+          <Text style={styles.headerTitle}>{t('active_job')}</Text>
           <Text style={styles.headerSubtitle}>#{job.id}</Text>
         </View>
         <View style={styles.statusBadge}>
@@ -170,7 +172,7 @@ const ActiveJob = ({ job, onStatusUpdate, onCompleteJob, onBack, onShowToast }: 
               />
             </View>
             <Text style={styles.progressText}>
-              {currentStatusIndex + 1} of {statusSteps.length}
+              {currentStatusIndex + 1} {t('of')} {statusSteps.length}
             </Text>
           </View>
         </Animated.View>
@@ -227,7 +229,7 @@ const ActiveJob = ({ job, onStatusUpdate, onCompleteJob, onBack, onShowToast }: 
         >
           <TouchableOpacity style={styles.navigationButton} onPress={handleNavigate}>
             <MaterialIcons name="navigation" size={24} color="white" />
-            <Text style={styles.navigationButtonText}>Open Navigation</Text>
+            <Text style={styles.navigationButtonText}>{t('open_navigation')}</Text>
           </TouchableOpacity>
         </Animated.View>
       </ScrollView>
@@ -246,7 +248,7 @@ const ActiveJob = ({ job, onStatusUpdate, onCompleteJob, onBack, onShowToast }: 
               color="white" 
             />
             <Text style={styles.nextButtonText}>
-              {isLoading ? 'Updating...' : `Mark as ${nextAction.label}`}
+              {isLoading ? t('updating') : `${t('mark_as')} ${nextAction.label}`}
             </Text>
           </TouchableOpacity>
         ) : (
@@ -256,7 +258,7 @@ const ActiveJob = ({ job, onStatusUpdate, onCompleteJob, onBack, onShowToast }: 
             disabled={isLoading}
           >
             <MaterialIcons name="check-circle" size={20} color="white" />
-            <Text style={styles.completeButtonText}>Complete Job</Text>
+            <Text style={styles.completeButtonText}>{t('complete_job')}</Text>
           </TouchableOpacity>
         )}
       </View>
