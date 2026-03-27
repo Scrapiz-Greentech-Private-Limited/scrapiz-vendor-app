@@ -2,6 +2,7 @@ import React from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, ScrollView, Linking } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 import { BookingRequest } from '../../types';
+import { useLanguage } from '../../utils/i18n';
 
 interface BookingDetailsScreenProps {
   booking: BookingRequest;
@@ -12,6 +13,7 @@ interface BookingDetailsScreenProps {
 }
 
 const BookingDetailsScreen = ({ booking, onBack, onAccept, onReject, isAccepted = false }: BookingDetailsScreenProps) => {
+  const { t } = useLanguage();
   const handleCall = () => {
     if (!isAccepted) {
       // Show alert that phone number is only available after accepting
@@ -45,14 +47,14 @@ const BookingDetailsScreen = ({ booking, onBack, onAccept, onReject, isAccepted 
     const bookingDate = new Date(date);
     
     if (bookingDate.toDateString() === today.toDateString()) {
-      return 'Today';
+      return t('today_caps');
     }
     
     const tomorrow = new Date(today);
     tomorrow.setDate(tomorrow.getDate() + 1);
     
     if (bookingDate.toDateString() === tomorrow.toDateString()) {
-      return 'Tomorrow';
+      return t('tomorrow_caps');
     }
     
     return bookingDate.toLocaleDateString('en-IN', { 
@@ -70,10 +72,10 @@ const BookingDetailsScreen = ({ booking, onBack, onAccept, onReject, isAccepted 
           <MaterialIcons name="arrow-back" size={24} color="white" />
         </TouchableOpacity>
         <View style={styles.headerCenter}>
-          <Text style={styles.headerTitle} numberOfLines={1}>Booking Request</Text>
+          <Text style={styles.headerTitle} numberOfLines={1}>{t('booking_request')}</Text>
           <View style={styles.statusBadge}>
             <View style={styles.statusDot} />
-            <Text style={styles.statusText}>New Request</Text>
+            <Text style={styles.statusText}>{t('new_request')}</Text>
           </View>
         </View>
         <View style={styles.headerRight}>
@@ -93,29 +95,29 @@ const BookingDetailsScreen = ({ booking, onBack, onAccept, onReject, isAccepted 
               </View>
               <View style={styles.distanceDetails}>
                 <Text style={styles.distanceText}>{booking.distance}</Text>
-                <Text style={styles.etaText}>~15 mins away</Text>
+                <Text style={styles.etaText}>~15 {t('mins_away')}</Text>
               </View>
             </View>
             <View style={styles.urgencyBadge}>
               <MaterialIcons name="schedule" size={14} color="#ff6b35" />
-              <Text style={styles.urgencyText}>Urgent</Text>
+              <Text style={styles.urgencyText}>{t('urgent')}</Text>
             </View>
           </View>
           
           <View style={styles.addressContainer}>
             <View style={styles.addressHeader}>
               <MaterialIcons name="location-on" size={20} color="#1B7332" />
-              <Text style={styles.addressLabel}>Pickup Location</Text>
+              <Text style={styles.addressLabel}>{t('pickup_location')}</Text>
             </View>
             <Text style={styles.addressText}>{booking.address}</Text>
             <View style={styles.locationActions}>
               <TouchableOpacity style={styles.navigateBtn} onPress={handleNavigate} activeOpacity={0.8}>
                 <MaterialIcons name="navigation" size={16} color="white" />
-                <Text style={styles.navigateBtnText}>Navigate</Text>
+                <Text style={styles.navigateBtnText}>{t('navigate')}</Text>
               </TouchableOpacity>
               <TouchableOpacity style={styles.shareLocationBtn} activeOpacity={0.8}>
                 <MaterialIcons name="share" size={16} color="#1B7332" />
-                <Text style={styles.shareLocationText}>Share</Text>
+                <Text style={styles.shareLocationText}>{t('share')}</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -128,9 +130,9 @@ const BookingDetailsScreen = ({ booking, onBack, onAccept, onReject, isAccepted 
               <MaterialIcons name="security" size={20} color="#1B7332" />
             </View>
             <View style={styles.privacyContent}>
-              <Text style={styles.privacyTitle}>Customer Privacy Protected</Text>
+              <Text style={styles.privacyTitle}>{t('customer_privacy_protected')}</Text>
               <Text style={styles.privacyText}>
-                Contact details will be revealed after you accept this booking request. This protects customer privacy and ensures committed service.
+                {t('privacy_notice_text')}
               </Text>
             </View>
           </View>
@@ -143,9 +145,9 @@ const BookingDetailsScreen = ({ booking, onBack, onAccept, onReject, isAccepted 
               <MaterialIcons name="person" size={24} color="#1B7332" />
             </View>
             <View style={styles.cardHeaderText}>
-              <Text style={styles.cardTitle}>Customer Details</Text>
+              <Text style={styles.cardTitle}>{t('customer_details')}</Text>
               <Text style={styles.cardSubtitle}>
-                {isAccepted ? "Contact information" : "Limited information available"}
+                {isAccepted ? t('contact_details') : t('limited_info')}
               </Text>
             </View>
             {!isAccepted && (
@@ -188,7 +190,7 @@ const BookingDetailsScreen = ({ booking, onBack, onAccept, onReject, isAccepted 
                       />
                     </View>
                     <View style={styles.contactInfo}>
-                      <Text style={styles.contactLabel}>Phone Number</Text>
+                      <Text style={styles.contactLabel}>{t('phone_number')}</Text>
                       <Text style={[
                         styles.contactValue,
                         !isAccepted && styles.contactValueHidden
@@ -203,8 +205,8 @@ const BookingDetailsScreen = ({ booking, onBack, onAccept, onReject, isAccepted 
                         !isAccepted && styles.contactHintLocked
                       ]}>
                         {isAccepted 
-                          ? "Tap to call customer" 
-                          : "Accept booking to reveal number"
+                          ? t('tap_to_call') 
+                          : t('accept_to_reveal')
                         }
                       </Text>
                     </View>
@@ -250,7 +252,7 @@ const BookingDetailsScreen = ({ booking, onBack, onAccept, onReject, isAccepted 
                   styles.contactActionText,
                   !isAccepted && styles.contactActionTextDisabled
                 ]}>
-                  {isAccepted ? "Call Now" : "Locked"}
+                  {isAccepted ? t('call_now') : t('locked')}
                 </Text>
               </TouchableOpacity>
               <TouchableOpacity 
@@ -271,7 +273,7 @@ const BookingDetailsScreen = ({ booking, onBack, onAccept, onReject, isAccepted 
                   styles.contactActionText2,
                   !isAccepted && styles.contactActionText2Disabled
                 ]}>
-                  {isAccepted ? "Message" : "Locked"}
+                  {isAccepted ? t('message') : t('locked')}
                 </Text>
               </TouchableOpacity>
             </View>
@@ -286,14 +288,14 @@ const BookingDetailsScreen = ({ booking, onBack, onAccept, onReject, isAccepted 
               <View style={styles.scrapTypeSection}>
                 <View style={styles.scrapTypeHeader}>
                   <MaterialIcons name="category" size={20} color="#1B7332" />
-                  <Text style={styles.scrapTypeTitle}>Scrap Material</Text>
+                  <Text style={styles.scrapTypeTitle}>{t('scrap_material')}</Text>
                   <View style={styles.priorityBadge}>
                     <MaterialIcons name="priority-high" size={12} color="#ff6b35" />
-                    <Text style={styles.priorityText}>High Priority</Text>
+                    <Text style={styles.priorityText}>{t('priority_high')}</Text>
                   </View>
                 </View>
                 <Text style={styles.scrapTypeValue}>{booking.scrapType}</Text>
-                <Text style={styles.estimatedWeight}>Est. Weight: 15-25 kg</Text>
+                <Text style={styles.estimatedWeight}>{t('estimated_weight')}: 15-25 kg</Text>
               </View>
             </View>
 
@@ -301,13 +303,13 @@ const BookingDetailsScreen = ({ booking, onBack, onAccept, onReject, isAccepted 
             <View style={styles.secondaryDetails}>
               <View style={styles.detailItem}>
                 <MaterialIcons name="schedule" size={16} color="#6c757d" />
-                <Text style={styles.detailSecondaryLabel}>Pickup Date</Text>
+                <Text style={styles.detailSecondaryLabel}>{t('pickup_date')}</Text>
                 <Text style={styles.detailSecondaryValue}>{formatDate(booking.createdAt)}</Text>
               </View>
               
               <View style={styles.detailItem}>
                 <MaterialIcons name="payment" size={16} color="#6c757d" />
-                <Text style={styles.detailSecondaryLabel}>Payment Method</Text>
+                <Text style={styles.detailSecondaryLabel}>{t('payment_method')}</Text>
                 <View style={styles.paymentBadge}>
                   <Text style={styles.paymentText}>{booking.paymentMode}</Text>
                 </View>
@@ -318,7 +320,7 @@ const BookingDetailsScreen = ({ booking, onBack, onAccept, onReject, isAccepted 
             <View style={styles.amountSection}>
               <View style={styles.amountHeader}>
                 <MaterialIcons name="account-balance-wallet" size={18} color="white" />
-                <Text style={styles.amountTitle}>Estimated Value</Text>
+                <Text style={styles.amountTitle}>{t('estimated_value')}</Text>
               </View>
               <View style={styles.amountRow}>
                 <View style={styles.amountRange}>
@@ -354,13 +356,13 @@ const BookingDetailsScreen = ({ booking, onBack, onAccept, onReject, isAccepted 
               styles.summaryTitle,
               isAccepted && styles.summaryTitleAccepted
             ]}>
-              {isAccepted ? "Booking Accepted!" : "Accept Booking Request"}
+              {isAccepted ? t('booking_accepted_msg') : t('accept_booking')}
             </Text>
           </View>
           <Text style={styles.summaryDescription}>
             {isAccepted 
-              ? "Contact information is now available. You can call or message the customer."
-              : "Review the details above and choose your action"
+              ? t('accepted_info_available')
+              : t('review_details_action')
             }
           </Text>
           
@@ -369,18 +371,18 @@ const BookingDetailsScreen = ({ booking, onBack, onAccept, onReject, isAccepted 
             <View style={styles.mainActions}>
               <TouchableOpacity style={styles.rejectButton} onPress={onReject} activeOpacity={0.8}>
                 <MaterialIcons name="close" size={20} color="#dc3545" />
-                <Text style={styles.rejectButtonText}>Decline Booking</Text>
+                <Text style={styles.rejectButtonText}>{t('decline_booking')}</Text>
               </TouchableOpacity>
               <TouchableOpacity style={styles.acceptButton} onPress={onAccept} activeOpacity={0.9}>
                 <MaterialIcons name="check-circle" size={20} color="white" />
-                <Text style={styles.acceptButtonText}>Accept Booking</Text>
+                <Text style={styles.acceptButtonText}>{t('accept_booking')}</Text>
               </TouchableOpacity>
             </View>
           ) : (
             <View style={styles.mainActions}>
               <TouchableOpacity style={styles.proceedButton} onPress={onAccept} activeOpacity={0.9}>
                 <MaterialIcons name="navigation" size={20} color="white" />
-                <Text style={styles.proceedButtonText}>Start Navigation</Text>
+                <Text style={styles.proceedButtonText}>{t('start_navigation')}</Text>
               </TouchableOpacity>
             </View>
           )}

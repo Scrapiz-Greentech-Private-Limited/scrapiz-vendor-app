@@ -1,29 +1,26 @@
 import { MaterialIcons } from '@expo/vector-icons';
-import * as Sentry from '@sentry/react-native';
 import { usePostHog } from 'posthog-react-native';
 import { useCallback, useEffect, useState } from 'react';
 import {
-    Alert,
-    Animated,
-    Linking,
-    RefreshControl,
-    ScrollView,
-    StatusBar,
-    StyleSheet,
-    Text,
-    TouchableOpacity,
-    View
+  Alert,
+  Animated,
+  Linking,
+  RefreshControl,
+  ScrollView,
+  StatusBar,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View
 } from 'react-native';
 import { useAuth } from '../../../hooks/useAuth';
-import { CreditBalance, CreditRechargeModal } from '../../components/ui';
-import CreditLoadingState from '../../components/ui/CreditLoadingState';
 import { BookingCardSkeleton } from '../../components/ui/SkeletonLoader';
 import { bookingStateService } from '../../services/bookingStateService';
-import { creditNotificationService } from '../../services/creditNotificationService';
-import { CreditRechargeResult } from '../../services/creditRechargeService';
 import { creditService } from '../../services/creditService';
 import HapticService from '../../services/hapticService';
 import { BookingRequest } from '../../types';
+
+import { useLanguage } from '../../utils/i18n';
 
 interface DashboardProps {
   onBookingSelect: (booking: BookingRequest) => void;
@@ -34,12 +31,10 @@ interface DashboardProps {
 
 export default function Dashboard({ onBookingSelect, onShowToast, onNavigate }: DashboardProps) {
   const { user, toggleOnlineStatus } = useAuth();
+  const { t } = useLanguage();
   const posthog = usePostHog();
   const [isOnline, setIsOnline] = useState(user?.isOnline || false);
   const [isRefreshing, setIsRefreshing] = useState(false);
-  const [creditBalance, setCreditBalance] = useState<number>(0);
-  const [showRechargeModal, setShowRechargeModal] = useState(false);
-  const [loadingBalance, setLoadingBalance] = useState(true);
   const [processedBookings, setProcessedBookings] = useState<string[]>([]);
 
   const [fadeAnim] = useState(new Animated.Value(0));
@@ -94,35 +89,10 @@ export default function Dashboard({ onBookingSelect, onShowToast, onNavigate }: 
     }
   }, [user]);
 
-  // Initialize credit service and load balance when user is available
   useEffect(() => {
-    const initializeCreditService = async () => {
-      if (!user) return;
-      
-      try {
-        // Set vendor ID in credit service
-        creditService.setVendorId(user.id);
-        
-        // Set toast handler for notifications
-        creditService.setToastHandler(onShowToast);
-        
-        // Load credit balance
-        setLoadingBalance(true);
-        const balance = await creditService.getCurrentBalance();
-        setCreditBalance(balance);
-        
-        // Optimize performance by preloading data
-        await creditService.optimizePerformance();
-      } catch (error) {
-        console.error('Failed to initialize credit service:', error);
-        onShowToast('Failed to load credit balance', 'error');
-      } finally {
-        setLoadingBalance(false);
-      }
-    };
-
-    initializeCreditService();
-  }, [user, onShowToast]);
+    if (!user) return;
+    creditService.setVendorId(user.id);
+  }, [user]);
 
   // Enhanced animations for cards
   useEffect(() => {
@@ -222,7 +192,7 @@ export default function Dashboard({ onBookingSelect, onShowToast, onNavigate }: 
                 { text: 'Cancel', style: 'cancel' },
                 { 
                   text: '⚡ Recharge Now', 
-                  onPress: () => setShowRechargeModal(true)
+                  onPress: () => onNavigate('credit')
                 }
               ]
             );
@@ -318,38 +288,6 @@ export default function Dashboard({ onBookingSelect, onShowToast, onNavigate }: 
     }
   };
 
-  const handleCreditPress = () => {
-    onNavigate('credit');
-  };
-
-  const handleRechargeSuccess = async (result: CreditRechargeResult) => {
-    posthog.capture('credit_recharge_completed', {
-      credits_added: result.creditsAdded ?? null,
-      new_balance: result.newBalance ?? null,
-      transaction_id: result.transactionId ?? null,
-      vendor_id: user?.id ?? null,
-    });
-    if (result.newBalance !== undefined) {
-      setCreditBalance(result.newBalance);
-    } else {
-      // Refresh balance from service
-      try {
-        const newBalance = await creditService.getCurrentBalance();
-        setCreditBalance(newBalance);
-      } catch (error) {
-        console.error('Failed to refresh balance:', error);
-      }
-    }
-    onShowToast(
-      `Successfully added ${result.creditsAdded} credits! New balance: ${result.newBalance}`,
-      'success'
-    );
-  };
-
-  const handleRechargeError = (error: string) => {
-    onShowToast(error, 'error');
-  };
-
   const getPriorityColor = (priority: string) => {
     switch (priority) {
       case 'high': return '#dc3545';
@@ -359,15 +297,34 @@ export default function Dashboard({ onBookingSelect, onShowToast, onNavigate }: 
     }
   };
 
-  const getGreeting = useCallback(() => {
-    const hour = new Date().getHours();
-    if (hour < 12) return 'Good Morning';
-    if (hour < 17) return 'Good Afternoon';
-    return 'Good Evening';
+  const [currentBannerIndex, setCurrentBannerIndex] = useState(0);
+
+  const banners = [
+    {
+      title: t('wallet_balance_low'),
+      subtitle: t('add_funds_warning'),
+      value: '-₹20',
+      type: 'wallet',
+      bgColor: '#6b0f1a'
+    },
+    {
+      title: 'Plan validity low',
+      subtitle: 'Please purchase a plan to avoid suspension of your unit.',
+      value: '6 Days',
+      type: 'plan',
+      bgColor: '#7C162E'
+    }
+  ];
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setCurrentBannerIndex(prev => (prev === 0 ? 1 : 0));
+    }, 5000);
+    return () => clearInterval(timer);
   }, []);
 
   return (
-    <View className="flex-1 bg-[#f8f9fa]">
+    <View className="flex-1 bg-[#f8f9fa] pb-40">
       <StatusBar backgroundColor="#1B7332" barStyle="light-content" />
       <ScrollView 
         className="flex-1"
@@ -383,82 +340,33 @@ export default function Dashboard({ onBookingSelect, onShowToast, onNavigate }: 
         }
         showsVerticalScrollIndicator={false}
       >
-        <View className="bg-[#1B7332] px-4 pt-14 pb-6 rounded-b-[24px] shadow-lg">
-          <View className="flex-row justify-between items-start mb-5">
-            <View className="flex-1">
-              <View className="flex-row items-center mb-1">
-                <Text className="text-[14px] text-white/90 font-medium">
-                  {getGreeting()}!
-                </Text>
-                <Text className="text-[16px] text-white font-bold ml-1">
-                  {user?.name || 'Vendor'}
-                </Text>
-              </View>
-              <Text className="text-[20px] text-white font-bold tracking-tight">
-                {isOnline ? 'Ready to collect scrap today?' : 'Currently offline'}
+        <View className="bg-[#1B7332] px-4 pt-14 pb-6 rounded-b-[32px] shadow-lg">
+          <View className="flex-row justify-between items-center mb-6">
+            <TouchableOpacity className="flex-row items-center">
+              <Text className="text-[22px] text-white font-bold mr-1">Pickup unit</Text>
+              <MaterialIcons name="keyboard-arrow-down" size={24} color="white" />
+            </TouchableOpacity>
+            
+            <TouchableOpacity
+              onPress={handleToggleOnline}
+              className={`flex-row items-center px-4 py-2 rounded-full ${isOnline ? 'bg-[#4CAF50]' : 'bg-gray-500'}`}
+            >
+              <Text className="text-[14px] font-bold text-white mr-2">
+                {isOnline ? 'ONLINE' : 'OFFLINE'}
               </Text>
-            </View>
-            <View className="items-end">
-              {loadingBalance ? (
-                <CreditLoadingState type="balance" />
-              ) : (
-                <CreditBalance 
-                  balance={creditBalance}
-                  onPress={handleCreditPress}
-                  showWarning={creditBalance < 5}
-                />
-              )}
-            </View>
+              <View className="w-6 h-6 rounded-full bg-white shadow-sm" />
+            </TouchableOpacity>
           </View>
 
-          <View className="bg-white flex-row justify-between items-center p-3.5 rounded-2xl shadow-sm border border-gray-100">
-            <View className="flex-row items-center">
-              <View className="w-9 h-9 rounded-full bg-[#E8F5E8] justify-center items-center mr-2.5 relative">
-                <MaterialIcons 
-                  name={isOnline ? "wifi" : "wifi-off"} 
-                  size={18} 
-                  color={isOnline ? "#1B7332" : "#666"} 
-                />
-                {isOnline && <View className="absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full bg-[#4CAF50] border-2 border-white" />}
-              </View>
-              <View className="justify-center">
-                <View className="flex-row items-center">
-                  <Text className="text-[15px] font-bold text-gray-800">{isOnline ? 'Online' : 'Offline'}</Text>
-                  {isOnline && <View className="w-1.5 h-1.5 rounded-full bg-[#4CAF50] ml-1.5" />}
-                </View>
-                <Text className="text-[11px] text-gray-500">
-                  {isOnline ? 'Receiving new bookings' : 'Currently not receiving bookings'}
-                </Text>
-              </View>
+          <View className="flex-row items-center">
+            <View className="w-12 h-12 rounded-xl bg-white/10 justify-center items-center mr-4">
+              <MaterialIcons name="moped" size={32} color="white" />
             </View>
-            <TouchableOpacity
-              className={`flex-row items-center px-3 py-2 rounded-xl ${isOnline ? 'bg-[#333]' : 'bg-[#1B7332]'}`}
-              onPress={handleToggleOnline}
-            >
-              <MaterialIcons 
-                name={isOnline ? "pause" : "play-arrow"} 
-                size={14} 
-                color="white" 
-                style={{ marginRight: 4 }} 
-              />
-              <Text className="text-[12px] font-bold text-white">
-                {isOnline ? 'Go Offline' : 'Go Online'}
-              </Text>
-            </TouchableOpacity>
+            <View>
+              <Text className="text-[20px] text-white font-bold">Access</Text>
+              <Text className="text-[14px] text-white/60 font-medium">MH01DM8286</Text>
+            </View>
           </View>
-          
-          {isOnline && (
-            <TouchableOpacity
-              className="mt-4 py-2.5 px-4 bg-orange-500/10 rounded-xl flex-row items-center justify-center border border-orange-500/20"
-              onPress={() => {
-                Sentry.captureException(new Error('First error'));
-                onShowToast('Test error sent to Sentry!', 'success');
-              }}
-            >
-              <MaterialIcons name="bug-report" size={16} color="#FF6B35" />
-              <Text className="text-[#FF6B35] font-bold text-[13px] ml-1.5">Test Sentry</Text>
-            </TouchableOpacity>
-          )}
         </View>
 
         <View className="flex-1 px-4 pt-4">
@@ -470,9 +378,9 @@ export default function Dashboard({ onBookingSelect, onShowToast, onNavigate }: 
                     <MaterialIcons name="flash-on" size={20} color="#1B7332" />
                   </View>
                   <View>
-                    <Text className="text-[16px] font-bold text-gray-800">New Booking Requests</Text>
+                    <Text className="text-[16px] font-bold text-gray-800">{t('new_booking_requests')}</Text>
                     <Text className="text-[12px] text-gray-500">
-                      {bookings.filter(booking => !processedBookings.includes(booking.id)).length} requests available
+                      {bookings.filter(booking => !processedBookings.includes(booking.id)).length} {t('requests_available')}
                     </Text>
                   </View>
                 </View>
@@ -531,10 +439,10 @@ export default function Dashboard({ onBookingSelect, onShowToast, onNavigate }: 
                       <View className="flex-row justify-between items-center py-2.5 border-t border-b border-gray-50 mb-3">
                         <View className="flex-row items-center">
                           <View className="w-1.5 h-1.5 rounded-full bg-[#4CAF50] mr-1.5" />
-                          <Text className="text-[12px] text-gray-500">Just now</Text>
+                          <Text className="text-[12px] text-gray-500">{t('just_now')}</Text>
                         </View>
                         <TouchableOpacity className="flex-row items-center" onPress={() => handleBookingAction(booking.id, 'view')}>
-                          <Text className="text-[12px] text-[#1B7332] font-bold mr-1">View Details</Text>
+                          <Text className="text-[12px] text-[#1B7332] font-bold mr-1">{t('view_details')}</Text>
                           <MaterialIcons name="arrow-forward-ios" size={12} color="#1B7332" />
                         </TouchableOpacity>
                       </View>
@@ -543,14 +451,14 @@ export default function Dashboard({ onBookingSelect, onShowToast, onNavigate }: 
                           className="flex-1 py-3 px-4 rounded-xl bg-gray-50 justify-center items-center border border-gray-100"
                           onPress={() => handleBookingAction(booking.id, 'decline')}
                         >
-                          <Text className="text-[15px] font-bold text-gray-500">Decline</Text>
+                          <Text className="text-[15px] font-bold text-gray-500">{t('reject')}</Text>
                         </TouchableOpacity>
                         <TouchableOpacity 
                           className="flex-[2] flex-row py-3 px-4 rounded-xl bg-[#1B7332] justify-center items-center"
                           onPress={() => handleBookingAction(booking.id, 'accept')}
                         >
                           <MaterialIcons name="check-circle" size={16} color="white" />
-                          <Text className="text-[15px] font-bold text-white ml-1.5">Accept</Text>
+                          <Text className="text-[15px] font-bold text-white ml-1.5">{t('accept')}</Text>
                         </TouchableOpacity>
                       </View>
                     </Animated.View>
@@ -561,16 +469,16 @@ export default function Dashboard({ onBookingSelect, onShowToast, onNavigate }: 
                       <MaterialIcons name="schedule" size={48} color="#1B7332" />
                       <View className="absolute top-5 right-5 w-3 h-3 rounded-full bg-[#1B7332] border-2 border-white" />
                     </View>
-                    <Text className="text-[18px] font-bold text-gray-800 mb-2">Ready for new pickups!</Text>
+                    <Text className="text-[18px] font-bold text-gray-800 mb-2">{t('ready_for_pickups')}</Text>
                     <Text className="text-[14px] text-gray-500 text-center px-10 mb-6 leading-5">
-                      We'll notify you as soon as requests come in
+                      {t('notify_requests')}
                     </Text>
                     <TouchableOpacity 
                       className="flex-row items-center bg-[#1B7332] px-5 py-3 rounded-xl"
                       onPress={handleRefresh}
                     >
                       <MaterialIcons name="refresh" size={18} color="white" />
-                      <Text className="text-white font-bold ml-2">Check for updates</Text>
+                      <Text className="text-white font-bold ml-2">{t('check_updates')}</Text>
                     </TouchableOpacity>
                   </View>
                 )}
@@ -578,57 +486,73 @@ export default function Dashboard({ onBookingSelect, onShowToast, onNavigate }: 
             </Animated.View>
           ) : (
             <View className="flex-1 pt-2">
-              {/* Wallet Warning Banner */}
-              <View className="bg-[#6b0f1a] rounded-3xl p-4 mb-6 relative overflow-hidden shadow-lg">
-                <View className="flex-row items-start pr-6">
-                  <View className="w-11 h-11 rounded-full bg-white/10 justify-center items-center mr-3.5">
-                    <MaterialIcons name="warning" size={28} color="#FFD700" />
+              {/* Warnings Carousel Banner */}
+              <View 
+                style={{ backgroundColor: banners[currentBannerIndex].bgColor }}
+                className="rounded-[32px] p-5 mb-6 relative overflow-hidden shadow-lg min-h-[140px]"
+              >
+                <View className="flex-row items-start pr-8">
+                  <View className="w-12 h-12 rounded-full bg-white/10 justify-center items-center mr-4">
+                    <MaterialIcons 
+                      name={banners[currentBannerIndex].type === 'wallet' ? "warning" : "error-outline"} 
+                      size={32} 
+                      color="#FFD700" 
+                    />
                   </View>
                   <View className="flex-1">
-                    <Text className="text-[20px] font-bold text-white mb-1">Wallet balance low</Text>
-                    <Text className="text-[13px] text-white/80 leading-[18px] mb-3">
-                      Please add funds to your wallet to avoid suspension of your account.
+                    <Text className="text-[22px] font-bold text-white mb-1.5">
+                      {banners[currentBannerIndex].title}
                     </Text>
-                    <View className="flex-row gap-x-1.5">
-                      <View className="w-5 h-1 rounded-full bg-white" />
-                      <View className="w-5 h-1 rounded-full bg-white/30" />
+                    <Text className="text-[14px] text-white/80 leading-[20px] mb-4">
+                      {banners[currentBannerIndex].subtitle}
+                    </Text>
+                    
+                    {/* Carousel Dots */}
+                    <View className="flex-row gap-x-2">
+                       <View className={`w-6 h-1 rounded-full ${currentBannerIndex === 0 ? 'bg-white' : 'bg-white/30'}`} />
+                       <View className={`w-6 h-1 rounded-full ${currentBannerIndex === 1 ? 'bg-white' : 'bg-white/30'}`} />
                     </View>
                   </View>
-                  <View className="bg-white/10 border border-[#FFC107] rounded-lg px-2 py-3 justify-center items-center min-w-[60px]">
-                    <Text className="text-white text-[16px] font-bold">-₹20</Text>
+
+                  <View className="bg-white/10 border border-[#FFC107] rounded-xl px-3 py-4 justify-center items-center min-w-[70px]">
+                    <Text className="text-white text-[18px] font-bold">
+                      {banners[currentBannerIndex].value}
+                    </Text>
                   </View>
                 </View>
-                <TouchableOpacity className="absolute top-2 right-2">
-                  <MaterialIcons name="cancel" size={24} color="rgba(255, 255, 255, 0.8)" />
+
+                <TouchableOpacity 
+                  className="absolute top-3 right-3 w-8 h-8 items-center justify-center rounded-full bg-black/10"
+                >
+                  <MaterialIcons name="close" size={20} color="white" />
                 </TouchableOpacity>
               </View>
 
-              {/* Today's Overview */}
               <View>
-                <Text className="text-[18px] font-bold text-gray-800 mb-4">Today's Overview</Text>
+                <Text className="text-[18px] font-bold text-gray-800 mb-4">{t('todays_overview')}</Text>
                 
                 <View className="gap-y-3">
                   <View className="flex-row gap-x-3">
                     <View className="flex-1 rounded-xl p-4 justify-center items-center min-h-[100px] border border-[#1B73321A] bg-[#F1F9F1]">
-                      <Text className="text-[32px] font-bold text-[#1B7332] mb-1">2</Text>
-                      <Text className="text-[14px] font-semibold text-[#1B7332]/70">Handled</Text>
+                      <Text className="text-[32px] font-bold text-[#1B7332] mb-1">0</Text>
+                      <Text className="text-[14px] font-semibold text-[#1B7332]/70">{t('handled')}</Text>
                     </View>
                     <View className="flex-1 rounded-xl p-4 justify-center items-center min-h-[100px] border border-[#dc35451A] bg-[#FFF5F5]">
-                      <Text className="text-[32px] font-bold text-[#dc3545] mb-1">1</Text>
-                      <Text className="text-[14px] font-semibold text-[#dc3545]/70">Cancelled</Text>
+                      <Text className="text-[32px] font-bold text-[#dc3545] mb-1">0</Text>
+                      <Text className="text-[14px] font-semibold text-[#dc3545]/70">{t('cancelled')}</Text>
                     </View>
                   </View>
-
+ 
                   <View className="rounded-xl p-4 flex-row justify-between items-center min-h-[70px] border border-blue-100 bg-blue-50">
-                    <Text className="text-[15px] font-bold text-slate-600">Quantity Purchased</Text>
+                    <Text className="text-[15px] font-bold text-slate-600">{t('quantity_purchased')}</Text>
                     <Text className="text-[18px] font-bold text-gray-800">
-                      12 <Text className="text-[14px] text-gray-600 font-normal">kg,</Text> 5 <Text className="text-[14px] text-gray-600 font-normal">pcs</Text>
+                      0 <Text className="text-[14px] text-gray-600 font-normal">kg,</Text> 0 <Text className="text-[14px] text-gray-600 font-normal">pcs</Text>
                     </Text>
                   </View>
-
+ 
                   <View className="rounded-xl p-4 flex-row justify-between items-center min-h-[70px] border border-blue-100 bg-blue-50">
-                    <Text className="text-[15px] font-bold text-slate-600">Purchase Amount</Text>
-                    <Text className="text-[18px] font-bold text-gray-800">₹ 850</Text>
+                    <Text className="text-[15px] font-bold text-slate-600">{t('purchase_amount')}</Text>
+                    <Text className="text-[18px] font-bold text-gray-800">₹ 0</Text>
                   </View>
                 </View>
               </View>
@@ -636,16 +560,6 @@ export default function Dashboard({ onBookingSelect, onShowToast, onNavigate }: 
           )}
         </View>
       </ScrollView>
-
-      {/* Credit Recharge Modal */}
-      <CreditRechargeModal
-        visible={showRechargeModal}
-        onClose={() => setShowRechargeModal(false)}
-        onRechargeSuccess={handleRechargeSuccess}
-        onRechargeError={handleRechargeError}
-        currentBalance={creditBalance}
-        onNavigateToCredit={() => onNavigate('credit')}
-      />
     </View>
   );
 }

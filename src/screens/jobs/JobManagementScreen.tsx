@@ -12,12 +12,15 @@ import {
 import DatePicker from 'react-native-modern-datepicker';
 import { bookingStateService, AcceptedBooking } from '../../services/bookingStateService';
 
+import { useLanguage } from '../../utils/i18n';
+
 interface JobManagementScreenProps {
   onBack: () => void;
   onNavigate: (screen: string) => void;
 }
 
 const JobManagementScreen = ({ onBack, onNavigate }: JobManagementScreenProps) => {
+  const { t } = useLanguage();
   const [showCalendar, setShowCalendar] = useState(false);
   const [selectedDate, setSelectedDate] = useState(new Date().toDateString());
   const [fadeAnim] = useState(new Animated.Value(0));
@@ -68,7 +71,7 @@ const JobManagementScreen = ({ onBack, onNavigate }: JobManagementScreenProps) =
       {/* Dynamic Header */}
       <View className="px-6 pt-16 pb-4">
         <Text className="text-[36px] font-bold text-gray-900 tracking-tight">
-          Duty Sessions
+          {t('duty_sessions')}
         </Text>
       </View>
 
@@ -90,16 +93,16 @@ const JobManagementScreen = ({ onBack, onNavigate }: JobManagementScreenProps) =
                 </View>
               </View>
               <Text className="text-[26px] font-bold text-[#333] mb-2 text-center">
-                No duty session available
+                {t('no_duty_session')}
               </Text>
               <Text className="text-[16px] text-gray-400 text-center font-medium">
-                No duty session to show
+                {t('no_session_to_show')}
               </Text>
             </View>
           ) : (
             /* Upcoming / In Progress Sessions List */
             <View className="mb-8">
-              <Text className="text-[18px] font-bold text-gray-800 mb-4">Active Sessions</Text>
+              <Text className="text-[18px] font-bold text-gray-800 mb-4">{t('active_sessions')}</Text>
               {acceptedBookings.map((booking) => (
                 <View 
                   key={booking.id} 
@@ -121,7 +124,7 @@ const JobManagementScreen = ({ onBack, onNavigate }: JobManagementScreenProps) =
                       className="bg-[#1B7332] px-4 py-2 rounded-xl"
                       onPress={() => onNavigate('JobDetails')}
                     >
-                      <Text className="text-white font-bold text-[12px]">View</Text>
+                      <Text className="text-white font-bold text-[12px]">{t('view_details')}</Text>
                     </TouchableOpacity>
                   </View>
                 </View>
@@ -132,21 +135,21 @@ const JobManagementScreen = ({ onBack, onNavigate }: JobManagementScreenProps) =
           {/* Past Duty Sessions Card */}
           <View className="bg-white rounded-[28px] border border-gray-100 shadow-sm p-4 flex-row items-center justify-between mt-4">
             <View className="flex-row items-center flex-1">
-              <View className="w-10 h-10 rounded-full bg-[#F5F5F5] border border-gray-100 justify-center items-center mr-2">
+              <View className="w-8 h-8 rounded-full bg-[#F5F5F5] border border-gray-100 justify-center items-center mr-2">
                 <View className="bg-[#E8F5E8] rounded-2xl relative">
                    <MaterialIcons name="history" size={26} color="#1B7332" />
               
                 </View>
               </View>
-              <Text className="text-[22px] font-bold text-[#333]">
-                Past duty sessions
+              <Text className="text-[20px] font-bold text-[#333]">
+                {t('past_duty_sessions')}
               </Text>
             </View>
             <TouchableOpacity 
               className="px-4 py-1 rounded-full border-2 border-[#1B7332] justify-center items-center"
               onPress={() => setShowCalendar(true)}
             >
-              <Text className="text-[18px] font-bold text-[#1B7332]">View</Text>
+              <Text className="text-[14px] font-bold text-[#1B7332]">{t('view_details')}</Text>
             </TouchableOpacity>
           </View>
         </Animated.View>
@@ -170,7 +173,7 @@ const JobManagementScreen = ({ onBack, onNavigate }: JobManagementScreenProps) =
           <View className="bg-white rounded-t-3xl p-6 pt-8 pb-10 shadow-2xl mt-auto">
             {/* Modal Header */}
             <View className="flex-row justify-between items-center mb-6">
-              <Text className="text-[20px] font-bold text-gray-900">Select date</Text>
+              <Text className="text-[20px] font-bold text-gray-900">{t('select_date')}</Text>
               <Text className="text-[14px] text-gray-600">Today, 21 Feb</Text>
             </View>
             
@@ -178,12 +181,21 @@ const JobManagementScreen = ({ onBack, onNavigate }: JobManagementScreenProps) =
 
             {/* Filter Pills */}
             <View className="flex-row flex-wrap gap-y-3 gap-x-2 mb-6">
-              {['Today', 'Yesterday', 'Last 7 Days', 'This month', 'Last Month', 'Past 6 months', 'This year', 'Lifetime'].map((option) => {
-                const isSelected = selectedDate === option; // Treating selectedDate as string filter
+              {[
+                { label: 'Today', key: 'today' },
+                { label: 'Yesterday', key: 'yesterday' },
+                { label: 'Last 7 Days', key: 'last_7_days' },
+                { label: 'This month', key: 'this_month' },
+                { label: 'Last Month', key: 'last_month' },
+                { label: 'Past 6 months', key: 'past_6_months' },
+                { label: 'This year', key: 'this_year' },
+                { label: 'Lifetime', key: 'lifetime' }
+              ].map((option) => {
+                const isSelected = selectedDate === option.label;
                 return (
                   <TouchableOpacity
-                    key={option}
-                    onPress={() => setSelectedDate(option)}
+                    key={option.key}
+                    onPress={() => setSelectedDate(option.label)}
                     className={`px-4 py-2.5 rounded-full border ${
                       isSelected 
                         ? 'bg-[#1B7332] border-[#1B7332]' 
@@ -193,7 +205,7 @@ const JobManagementScreen = ({ onBack, onNavigate }: JobManagementScreenProps) =
                     <Text className={`text-[14px] font-medium ${
                       isSelected ? 'text-white' : 'text-gray-700'
                     }`}>
-                      {option}
+                      {t(option.key)}
                     </Text>
                   </TouchableOpacity>
                 );
@@ -210,7 +222,7 @@ const JobManagementScreen = ({ onBack, onNavigate }: JobManagementScreenProps) =
             {/* Date Pickers */}
             <View className="flex-row justify-between mb-8">
               <View className="flex-1 mr-3">
-                <Text className="text-[13px] text-gray-600 mb-2">From</Text>
+                <Text className="text-[13px] text-gray-600 mb-2">{t('from')}</Text>
                 <TouchableOpacity 
                   onPress={() => setShowFakeDatePicker('from')}
                   className="border border-gray-300 rounded-xl px-4 py-3 flex-row items-center justify-between"
@@ -221,7 +233,7 @@ const JobManagementScreen = ({ onBack, onNavigate }: JobManagementScreenProps) =
               </View>
 
               <View className="flex-1 ml-3">
-                <Text className="text-[13px] text-gray-600 mb-2">To</Text>
+                <Text className="text-[13px] text-gray-600 mb-2">{t('to')}</Text>
                 <TouchableOpacity 
                   onPress={() => setShowFakeDatePicker('to')}
                   className="border border-gray-300 rounded-xl px-4 py-3 flex-row items-center justify-between"
@@ -232,12 +244,11 @@ const JobManagementScreen = ({ onBack, onNavigate }: JobManagementScreenProps) =
               </View>
             </View>
 
-            {/* Done Button */}
             <TouchableOpacity 
               onPress={() => handleDateSelect(selectedDate)}
               className="bg-[#1B7332] py-4 rounded-xl items-center mb-6"
             >
-              <Text className="text-white text-[16px] font-bold">Done</Text>
+              <Text className="text-white text-[16px] font-bold">{t('done')}</Text>
             </TouchableOpacity>
           </View>
         </View>

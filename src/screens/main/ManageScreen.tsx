@@ -30,6 +30,13 @@ const manageOptions = [
     color: "#2196F3"
   },
   {
+    icon: "receipt",
+    title: "Bills",
+    subtitle: "View your bills",
+    action: "bills",
+    color: "#9C27B0"
+  },
+  {
     icon: "trending-up",
     title: "Earnings Report",
     subtitle: "View your earnings",

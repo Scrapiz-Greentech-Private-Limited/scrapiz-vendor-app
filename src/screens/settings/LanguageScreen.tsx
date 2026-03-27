@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, ScrollView } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
+import { useLanguage } from '../../utils/i18n';
 
 interface LanguageScreenProps {
   onBack: () => void;
@@ -8,7 +9,8 @@ interface LanguageScreenProps {
 }
 
 const LanguageScreen = ({ onBack, onShowToast }: LanguageScreenProps) => {
-  const [selectedLanguage, setSelectedLanguage] = useState('english');
+  const { language: currentLanguage, setLanguage } = useLanguage();
+  const [selectedLanguage, setSelectedLanguage] = useState(currentLanguage);
 
   const languages = [
     { code: 'english', name: 'English', nativeName: 'English' },
@@ -19,8 +21,9 @@ const LanguageScreen = ({ onBack, onShowToast }: LanguageScreenProps) => {
     { code: 'telugu', name: 'Telugu', nativeName: 'తెలుగు' },
   ];
 
-  const handleSave = () => {
+  const handleSave = async () => {
     const languageName = languages.find(l => l.code === selectedLanguage)?.name || 'English';
+    await setLanguage(selectedLanguage as any);
     onShowToast(`Language changed to ${languageName}`, 'success');
     onBack();
   };
@@ -50,7 +53,7 @@ const LanguageScreen = ({ onBack, onShowToast }: LanguageScreenProps) => {
                 styles.languageCard,
                 selectedLanguage === language.code && styles.languageCardSelected
               ]}
-              onPress={() => setSelectedLanguage(language.code)}
+              onPress={() => setSelectedLanguage(language.code as any)}
             >
               {selectedLanguage === language.code && (
                 <View style={styles.checkIcon}>

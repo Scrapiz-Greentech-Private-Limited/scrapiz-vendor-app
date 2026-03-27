@@ -1,44 +1,53 @@
 import { PostHogProvider, usePostHog } from 'posthog-react-native';
+import { NavigationContainer } from '@react-navigation/native';
 import React, { useState } from 'react';
 import { Alert, StatusBar, StyleSheet, View } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { AuthProvider, useAuth } from './hooks/useAuth';
+import { LanguageProvider } from './src/utils/i18n';
 import { posthog } from './src/config/posthog';
 
 // Auth Screens
 import { OTPVerify, Signup, SimpleLogin } from './src/screens/auth';
 // Main Screens
-import { Dashboard, EarningsScreen, ManageScreen } from './src/screens/main';
+import { Dashboard, EarningsScreen, ManageScreen, BillsScreen, PurchaseBillDetailScreen } from './src/screens/main';
 
 // Profile Screens
 import { EditProfileScreen, PersonalInfoScreen, ProfileScreen } from './src/screens/profile';
 
 // Settings Screens
 import {
-  AboutScreen,
-  AppSettingsScreen,
-  ContactsScreen,
-  HelpSupportScreen,
-  LanguageScreen,
-  MoreMenuScreen,
-  NotificationsScreen,
-  PaymentSettingsScreen,
-  PrivacyScreen
+    AboutScreen,
+    AppSettingsScreen,
+    ContactsScreen,
+    HelpSupportScreen,
+    LanguageScreen,
+    MaterialsScreen,
+    MoreMenuScreen,
+    NotificationsScreen,
+    PaymentSettingsScreen,
+    PrivacyScreen,
+    SelectMaterialScreen
 } from './src/screens/settings';
 
 // Job Screens
 import {
-  ActiveJob,
-  BookingDetailsScreen,
-  DutySessionDetailsScreen,
-  FutureRequestsScreen,
-  JobCompletion,
-  JobHistoryScreen
+    ActiveJob,
+    BookingDetailsScreen,
+    DutySessionDetailsScreen,
+    FutureRequestsScreen,
+    HandledRequestsScreen,
+    JobCompletion,
+    JobHistoryScreen,
+    RequestDetailsScreen,
+    RequestsScreen
 } from './src/screens/jobs';
 import JobManagementScreen from './src/screens/jobs/JobManagementScreen';
 
 // Credit Screens
-import { CreditScreen } from './src/screens/credit';
+import { CreditScreen, AddMoneyScreen } from './src/screens/credit';
+// Subscription Screens
+import { SubscriptionScreen } from './src/screens/subscription';
 // Onboarding Screens
 import { AddVehicleScreen, PersonalDetailsScreen } from './src/screens/onboarding';
 
@@ -50,13 +59,13 @@ import { ActiveJob as ActiveJobType, BookingRequest } from './src/types';
 
 // Font loading imports
 import {
-  NotoSans_400Regular,
-  NotoSans_700Bold,
-  useFonts
+    NotoSans_400Regular,
+    NotoSans_700Bold,
+    useFonts
 } from '@expo-google-fonts/noto-sans';
 import {
-  RobotoSlab_400Regular,
-  RobotoSlab_700Bold
+    RobotoSlab_400Regular,
+    RobotoSlab_700Bold
 } from '@expo-google-fonts/roboto-slab';
 import * as SplashScreen from 'expo-splash-screen';
 import { useEffect } from 'react';
@@ -105,13 +114,14 @@ Sentry.init({
 });
 
 const AppContent = () => {
-  const { user, login } = useAuth();
+  const { user, login, isInitialLoading } = useAuth();
   const [authStep, setAuthStep] = useState('login'); 
   const [onboardingStep, setOnboardingStep] = useState<'none' | 'personal' | 'vehicle'>('none');
   const [tempPhone, setTempPhone] = useState('');
   const posthogClient = usePostHog();
   const [activeTab, setActiveTab] = useState('home');
   const [selectedBooking, setSelectedBooking] = useState<BookingRequest | null>(null);
+  const [selectedRequestItem, setSelectedRequestItem] = useState<any>(null);
   const [showJobCompletion, setShowJobCompletion] = useState(false);
   const [activeJob, setActiveJob] = useState<ActiveJobType | null>(null);
   const [isBookingAccepted, setIsBookingAccepted] = useState(false);
@@ -159,13 +169,28 @@ const AppContent = () => {
     setActiveTab('manage');
   };
 
+  const handleBackToOngoing = () => {
+    setActiveTab('ongoing');
+  };
+
+  const handleBackToMore = () => {
+    setActiveTab('more-menu');
+  };
+
   const handleBackToProfile = () => {
     setActiveTab('profile');
   };
 
-  const handleNavigate = (screen: string) => {
+  const handleNavigate = (screen: string, params?: any) => {
     setActiveTab(screen);
+    if (params?.request) {
+      setSelectedRequestItem(params.request);
+    }
   };
+
+  if (isInitialLoading) {
+    return null; // Or a splash screen component
+  }
 
  if (!user) {
     if (authStep === 'login') {
@@ -286,11 +311,26 @@ const AppContent = () => {
         return <HelpSupportScreen onBack={handleBackToProfile} />;
       case 'about':
         return <AboutScreen onBack={handleBackToProfile} />;
+      case 'bills':
+        return <BillsScreen onBack={handleBackToMore} onNavigate={handleNavigate} />;
+      case 'purchase-bill-detail':
+        return <PurchaseBillDetailScreen onBack={() => setActiveTab('bills')} />;
       // Manage tab sub-screens
       case 'history':
-        return <JobHistoryScreen onBack={handleBackToManage} onNavigate={handleNavigate} />;
+        return <JobHistoryScreen onBack={handleBackToOngoing} onNavigate={handleNavigate} />;
       case 'duty-session-details':
-        return <DutySessionDetailsScreen onBack={() => setActiveTab('history')} />;
+        return <DutySessionDetailsScreen onBack={() => setActiveTab('history')} onNavigate={handleNavigate} />;
+      case 'handled-requests':
+        return <HandledRequestsScreen onBack={() => setActiveTab('duty-session-details')} />;
+      case 'requests':
+        return <RequestsScreen onBack={() => setActiveTab('more-menu')} onNavigate={handleNavigate} />;
+      case 'request-details':
+        return (
+          <RequestDetailsScreen 
+            onBack={() => setActiveTab('requests')} 
+            request={selectedRequestItem} 
+          />
+        );
       case 'active-jobs-list':
         return <ActiveJob 
           job={{
@@ -420,7 +460,7 @@ const AppContent = () => {
       case 'contacts':
         return (
           <ContactsScreen
-            onBack={handleBackToProfile}
+            onBack={handleBackToMore}
           />
         );
       case 'language':
@@ -443,11 +483,44 @@ const AppContent = () => {
             onNavigate={handleNavigate}
           />
         );
+      case 'materials':
+        return (
+          <MaterialsScreen
+            onBack={() => handleNavigate('more-menu')}
+            onNavigate={handleNavigate}
+          />
+        );
+      case 'select-material':
+        return (
+          <SelectMaterialScreen
+            onBack={() => handleNavigate('materials')}
+            onNavigate={handleNavigate}
+          />
+        );
       case 'credit':
         return (
           <CreditScreen
-            onBack={handleBackToHome}
+            onBack={handleBackToMore}
             onShowToast={showToast}
+            onNavigate={handleNavigate}
+          />
+        );
+      case 'add-money':
+        return (
+          <AddMoneyScreen
+            onBack={() => handleNavigate('credit')}
+            onSuccess={(amount) => {
+              showToast(`₹${amount} added successfully!`, 'success');
+              handleNavigate('credit');
+            }}
+            currentBalance={-20}
+          />
+        );
+      case 'subscription':
+        return (
+          <SubscriptionScreen
+            onBack={handleBackToMore}
+            onNavigate={handleNavigate}
           />
         );
       default:
@@ -471,8 +544,8 @@ const AppContent = () => {
       />
       {renderContent()}
       
-      {/* Show bottom navigation except on active job and completion screens */}
-      {activeTab !== 'active-job' && activeTab !== 'job-completion' && !showJobCompletion && (
+      {/* Show bottom navigation except on active job, completion, add-money, subscription and materials screens */}
+      {activeTab !== 'active-job' && activeTab !== 'job-completion' && activeTab !== 'add-money' && activeTab !== 'subscription' && activeTab !== 'materials' && activeTab !== 'select-material' && !showJobCompletion && (
         <BottomNavigation
           activeTab={activeTab}
           onTabChange={setActiveTab}
@@ -510,35 +583,38 @@ export default Sentry.wrap(function App() {
 
   return (
     <SafeAreaProvider>
-      <PostHogProvider
-        client={posthog}
-        options={{
-          host: "https://us.i.posthog.com",
-          enableSessionReplay: true,
-          sessionReplayConfig :{
-            maskAllTextInputs: false,
-            maskAllImages: false,
-            captureLog: true,
-            captureNetworkTelemetry: true,
-            sampleRate: undefined,
-            throttleDelayMs: 1000,
-
-          }
-        }}
-        autocapture={{
-          captureScreens: true,
-          captureTouches: true,
-          propsToCapture: ['testID'],
-        }}
-      >
+      <LanguageProvider>
         <ErrorBoundary>
-          <AuthProvider>
-            <View className="flex-1 font-sans">
-              <AppContent />
-            </View>
-          </AuthProvider>
+          <PostHogProvider
+            client={posthog}
+            options={{
+              host: "https://us.i.posthog.com",
+              enableSessionReplay: true,
+              sessionReplayConfig: {
+                maskAllTextInputs: false,
+                maskAllImages: false,
+                captureLog: true,
+                captureNetworkTelemetry: true,
+                sampleRate: undefined,
+                throttleDelayMs: 1000,
+              }
+            }}
+            autocapture={{
+              captureScreens: true,
+              captureTouches: true,
+              propsToCapture: ['testID'],
+            }}
+          >
+            <AuthProvider>
+              <NavigationContainer>
+                <View className="flex-1 font-sans">
+                  <AppContent />
+                </View>
+              </NavigationContainer>
+            </AuthProvider>
+          </PostHogProvider>
         </ErrorBoundary>
-      </PostHogProvider>
+      </LanguageProvider>
     </SafeAreaProvider>
   );
 });

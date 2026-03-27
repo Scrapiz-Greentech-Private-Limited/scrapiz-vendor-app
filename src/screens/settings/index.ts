@@ -7,3 +7,5 @@ export { default as AboutScreen } from './AboutScreen';
 export { default as HelpSupportScreen } from './HelpSupportScreen';
 export { default as ContactsScreen } from './ContactsScreen';
 export { default as MoreMenuScreen } from './MoreMenuScreen';
+export { default as MaterialsScreen } from './MaterialsScreen';
+export { default as SelectMaterialScreen } from './SelectMaterialScreen';

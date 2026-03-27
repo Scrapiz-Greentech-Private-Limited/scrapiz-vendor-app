@@ -3,6 +3,7 @@ import { View, Text, TouchableOpacity, ScrollView, Image, StatusBar, Modal } fro
 import { MaterialIcons, Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import DatePicker from 'react-native-modern-datepicker';
+import { useLanguage } from '../../utils/i18n';
 
 interface JobHistoryScreenProps {
   onBack: () => void;
@@ -50,7 +51,8 @@ const dummySessions: PastSession[] = [
 ];
 
 const JobHistoryScreen = ({ onBack, onNavigate }: JobHistoryScreenProps) => {
-  const [selectedFilter, setSelectedFilter] = useState('Last Month');
+  const { t } = useLanguage();
+  const [selectedFilter, setSelectedFilter] = useState(t('last_month'));
   const [showCalendar, setShowCalendar] = useState(false);
   const [fromDate, setFromDate] = useState('21/02/2026');
   const [toDate, setToDate] = useState('21/02/2026');
@@ -87,10 +89,10 @@ const JobHistoryScreen = ({ onBack, onNavigate }: JobHistoryScreenProps) => {
         </View>
         <View className="items-end">
           <Text className="text-[12px] text-gray-500 mb-1">
-            Started : <Text className="text-gray-700">{session.startTime}</Text>
+            {t('started')} : <Text className="text-gray-700">{session.startTime}</Text>
           </Text>
           <Text className="text-[12px] text-gray-500">
-            Ended : <Text className="text-gray-700">{session.endTime}</Text>
+            {t('ended')} : <Text className="text-gray-700">{session.endTime}</Text>
           </Text>
         </View>
       </View>
@@ -107,7 +109,7 @@ const JobHistoryScreen = ({ onBack, onNavigate }: JobHistoryScreenProps) => {
           <Ionicons name="chevron-back" size={24} color="#333" />
         </TouchableOpacity>
         <Text className="text-[28px] font-bold text-gray-900 tracking-tight flex-1">
-          Past Duty Sessions
+          {t('past_duty_sessions')}
         </Text>
       </View>
 
@@ -158,19 +160,20 @@ const JobHistoryScreen = ({ onBack, onNavigate }: JobHistoryScreenProps) => {
           <View className="bg-white rounded-t-3xl p-6 pt-8 pb-10 shadow-2xl mt-auto">
             {/* Modal Header */}
             <View className="flex-row justify-between items-center mb-6">
-              <Text className="text-[20px] font-bold text-gray-900">Select date</Text>
-              <Text className="text-[14px] text-gray-600">Today, 21 Feb</Text>
+              <Text className="text-[20px] font-bold text-gray-900">{t('select_date')}</Text>
+              <Text className="text-[14px] text-gray-600">{t('today')}, 21 Feb</Text>
             </View>
             
             <View className="border-b border-gray-100 mb-6" />
 
             {/* Filter Pills */}
             <View className="flex-row flex-wrap gap-y-3 gap-x-2 mb-6">
-              {['Today', 'Yesterday', 'Last 7 Days', 'This month', 'Last Month', 'Past 6 months', 'This year', 'Lifetime'].map((option) => {
+              {['today', 'yesterday', 'last_7_days', 'this_month', 'last_month', 'past_6_months', 'this_year', 'lifetime'].map((key) => {
+                const option = t(key);
                 const isSelected = selectedFilter === option; // Treating selectedDate as string filter
                 return (
                   <TouchableOpacity
-                    key={option}
+                    key={key}
                     onPress={() => setSelectedFilter(option)}
                     className={`px-4 py-2.5 rounded-full border ${
                       isSelected 
@@ -191,14 +194,14 @@ const JobHistoryScreen = ({ onBack, onNavigate }: JobHistoryScreenProps) => {
             {/* Or Divider */}
             <View className="flex-row items-center mb-6">
               <View className="flex-1 h-[1px] bg-gray-200" />
-              <Text className="mx-4 text-gray-400 text-[13px]">Or</Text>
+              <Text className="mx-4 text-gray-400 text-[13px]">{t('or')}</Text>
               <View className="flex-1 h-[1px] bg-gray-200" />
             </View>
 
             {/* Date Pickers */}
             <View className="flex-row justify-between mb-8">
               <View className="flex-1 mr-3">
-                <Text className="text-[13px] text-gray-600 mb-2">From</Text>
+                <Text className="text-[13px] text-gray-600 mb-2">{t('from')}</Text>
                 <TouchableOpacity 
                    onPress={() => setShowFakeDatePicker('from')}
                    className="border border-gray-300 rounded-xl px-4 py-3 flex-row items-center justify-between"
@@ -209,7 +212,7 @@ const JobHistoryScreen = ({ onBack, onNavigate }: JobHistoryScreenProps) => {
               </View>
 
               <View className="flex-1 ml-3">
-                <Text className="text-[13px] text-gray-600 mb-2">To</Text>
+                <Text className="text-[13px] text-gray-600 mb-2">{t('to')}</Text>
                 <TouchableOpacity 
                    onPress={() => setShowFakeDatePicker('to')}
                    className="border border-gray-300 rounded-xl px-4 py-3 flex-row items-center justify-between"
@@ -225,7 +228,7 @@ const JobHistoryScreen = ({ onBack, onNavigate }: JobHistoryScreenProps) => {
               onPress={() => handleDateSelect(selectedFilter)}
               className="bg-[#1B7332] py-4 rounded-xl items-center mb-6"
             >
-              <Text className="text-white text-[16px] font-bold">Done</Text>
+              <Text className="text-white text-[16px] font-bold">{t('done')}</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -243,7 +246,7 @@ const JobHistoryScreen = ({ onBack, onNavigate }: JobHistoryScreenProps) => {
           <View className="bg-white px-5 pb-8 pt-5 rounded-t-3xl">
             <View className="flex-row justify-between items-center mb-4">
               <Text className="text-[18px] font-bold text-gray-900">
-                Select {showFakeDatePicker === 'from' ? 'From' : 'To'} Date
+                {t('select_date')} {showFakeDatePicker === 'from' ? t('from') : t('to')}
               </Text>
               <TouchableOpacity onPress={() => setShowFakeDatePicker(null)} className="p-2 bg-gray-100 rounded-full">
                 <MaterialIcons name="close" size={20} color="#444" />

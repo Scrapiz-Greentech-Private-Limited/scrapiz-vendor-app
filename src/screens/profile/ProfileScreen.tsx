@@ -1,7 +1,8 @@
 import React from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, ScrollView, Alert } from 'react-native';
-import { MaterialIcons, Ionicons } from '@expo/vector-icons';
+import { View, Text, TouchableOpacity, StyleSheet, ScrollView, Alert, Image, Platform } from 'react-native';
+import { MaterialIcons, Ionicons, FontAwesome5 } from '@expo/vector-icons';
 import { useAuth } from '../../../hooks/useAuth';
+import { useLanguage } from '../../utils/i18n';
 
 interface ProfileScreenProps {
   onBack: () => void;
@@ -10,15 +11,16 @@ interface ProfileScreenProps {
 
 const ProfileScreen = ({ onBack, onNavigate }: ProfileScreenProps) => {
   const { user, logout } = useAuth();
+  const { t, language, setLanguage } = useLanguage();
 
   const handleLogout = () => {
     Alert.alert(
-      'Logout',
-      'Are you sure you want to logout?',
+      t('logout'),
+      t('logout_confirm'),
       [
-        { text: 'Cancel', style: 'cancel' },
+        { text: t('cancel'), style: 'cancel' },
         { 
-          text: 'Logout', 
+          text: t('logout'), 
           style: 'destructive',
           onPress: logout 
         }
@@ -26,173 +28,204 @@ const ProfileScreen = ({ onBack, onNavigate }: ProfileScreenProps) => {
     );
   };
 
-  const profileCategories = [
-    {
-      title: "Account Management",
-      color: "#1B7332",
-      options: [
-        { 
-          icon: "person", 
-          title: "Personal Information", 
-          subtitle: "Name, phone, address", 
-          action: "personal-info",
-          badge: null 
-        },
-        { 
-          icon: "account-balance-wallet", 
-          title: "Payment Settings", 
-          subtitle: "Bank details, UPI", 
-          action: "payment-settings",
-          badge: null 
-        },
-        { 
-          icon: "language", 
-          title: "Language", 
-          subtitle: "हिंदी, English", 
-          action: "language",
-          badge: null 
-        }
-      ]
-    },
-    {
-      title: "Support & Info",
-      color: "#1B7332", 
-      options: [
-        { 
-          icon: "help", 
-          title: "Help & Support", 
-          subtitle: "FAQ, contact us", 
-          action: "help-support",
-          badge: null 
-        },
-        { 
-          icon: "info", 
-          title: "About", 
-          subtitle: "Version, terms", 
-          action: "about",
-          badge: null 
-        }
-      ]
-    }
-  ];
-
-  const handleOptionPress = (action: string) => {
-    try {
-      if (typeof onNavigate === 'function' && action) {
-        onNavigate(action);
-      } else {
-        console.error('Invalid navigation parameters:', { onNavigate: typeof onNavigate, action });
-      }
-    } catch (error) {
-      console.error('Profile navigation error:', error);
+  const getLanguageName = (lang: string) => {
+    switch (lang) {
+      case 'english': return 'English';
+      case 'hindi': return 'हिन्दी';
+      case 'marathi': return 'मराठी';
+      default: return 'English';
     }
   };
 
+  const [isLanguageModalVisible, setIsLanguageModalVisible] = React.useState(false);
 
+  const languages = [
+    { code: 'english', name: 'English', nativeName: 'English' },
+    { code: 'hindi', name: 'Hindi', nativeName: 'हिन्दी' },
+    { code: 'marathi', name: 'Marathi', nativeName: 'मराठी' },
+  ];
+
+  const handleLanguageSelect = async (code: string) => {
+    await setLanguage(code as any);
+    setIsLanguageModalVisible(false);
+  };
 
   return (
     <View style={styles.container}>
-      <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent}>
-        {/* Enhanced Header Section */}
-        <View style={styles.modernHeader}>
-          <View style={styles.headerGradient}>
-            {/* Navigation Bar */}
-            <View style={styles.navBar}>
-              <TouchableOpacity onPress={onBack} style={styles.modernBackButton}>
-                <Ionicons name="arrow-back" size={22} color="white" />
-              </TouchableOpacity>
-              
-              <View style={styles.navTitleContainer}>
-                <MaterialIcons name="account-circle" size={20} color="white" />
-                <Text style={styles.modernHeaderTitle}>My Profile</Text>
+      <ScrollView style={styles.scrollView} bounces={false}>
+        {/* Header Section */}
+        <View style={styles.header}>
+          {/* Back Button */}
+          <TouchableOpacity onPress={onBack} style={styles.backButton}>
+            <Ionicons name="arrow-back" size={24} color="white" />
+          </TouchableOpacity>
+          
+          <View style={styles.headerContent}>
+            <View style={styles.avatarContainer}>
+              <View style={styles.avatar}>
+                {user?.image ? (
+                  <Image source={{ uri: user.image }} style={styles.avatarImage} />
+                ) : (
+                  <MaterialIcons name="person" size={50} color="white" />
+                )}
               </View>
-              
-              <TouchableOpacity style={styles.editButton} onPress={() => handleOptionPress('edit-profile')}>
-                <MaterialIcons name="edit" size={20} color="white" />
-              </TouchableOpacity>
             </View>
-
-            {/* Enhanced Profile Card */}
-            <View style={styles.profileCard}>
-              <View style={styles.avatarSection}>
-                <View style={styles.modernAvatar}>
-                  <MaterialIcons name="person" size={24} color="white" />
-                  <TouchableOpacity style={styles.cameraButton}>
-                    <MaterialIcons name="camera-alt" size={12} color="#1B7332" />
-                  </TouchableOpacity>
-                </View>
-
-              </View>
-              
-              <View style={styles.userDetails}>
-                <Text style={styles.modernUserName}>{user?.name || 'Vendor Name'}</Text>
-                <Text style={styles.modernUserPhone}>{user?.phone || '+91 98765 43210'}</Text>
-                <View style={styles.verificationBadge}>
-                  <MaterialIcons name="verified" size={14} color="#1B7332" />
-                  <Text style={styles.verifiedText}>Verified Vendor</Text>
-                </View>
-              </View>
+            <View style={styles.headerInfo}>
+              <Text style={styles.userName}>{user?.name || 'Nooroolhuda'}</Text>
+              <Text style={styles.userPhone}>{user?.phone || '+91 9967332092'}</Text>
             </View>
           </View>
         </View>
 
         <View style={styles.content}>
-
-
-          {/* Categorized Profile Options */}
-          {profileCategories.map((category, categoryIndex) => (
-            <View key={categoryIndex} style={styles.categorySection}>
-              <View style={styles.categoryHeader}>
-                <View style={[styles.categoryIndicator, { backgroundColor: category.color }]} />
-                <Text style={styles.categoryTitle}>{category.title}</Text>
-              </View>
-              <View style={styles.categoryOptionsContainer}>
-                {category.options.map((option) => (
-                  <TouchableOpacity
-                    key={option.action}
-                    style={styles.modernOptionCard}
-                    onPress={() => handleOptionPress(option.action)}
-                    activeOpacity={0.7}
-                  >
-                    <View style={styles.modernOptionContent}>
-                      <View style={[styles.modernOptionIcon, { backgroundColor: category.color + '15' }]}>
-                        <MaterialIcons name={option.icon as any} size={22} color={category.color} />
-                      </View>
-                      <View style={styles.modernOptionTextContainer}>
-                        <View style={styles.optionHeader}>
-                          <Text style={styles.modernOptionTitle}>{option.title}</Text>
-                          {option.badge && (
-                            <View style={[styles.optionBadge, { backgroundColor: category.color + '20' }]}>
-                              <Text style={[styles.badgeText, { color: category.color }]}>{option.badge}</Text>
-                            </View>
-                          )}
-                        </View>
-                        <Text style={styles.modernOptionSubtitle}>{option.subtitle}</Text>
-                      </View>
-                      <MaterialIcons name="chevron-right" size={20} color="#bdc3c7" />
-                    </View>
-                  </TouchableOpacity>
-                ))}
-              </View>
-            </View>
-          ))}
-
-
-
-          {/* Security Section */}
-          <View style={styles.securitySection}>
-            <View style={styles.securityOptions}>
-              <TouchableOpacity style={styles.logoutOption} onPress={handleLogout}>
-                <View style={styles.logoutOptionIcon}>
-                  <MaterialIcons name="logout" size={20} color="#dc3545" />
+          {/* Ratings Card */}
+          <TouchableOpacity style={styles.ratingsCard} activeOpacity={0.8}>
+            <View style={styles.ratingsContent}>
+              <View style={styles.ratingsLeft}>
+                <View style={styles.starIconContainer}>
+                  <MaterialIcons name="star-outline" size={24} color="#333" />
                 </View>
-                <Text style={styles.logoutOptionText}>Sign Out</Text>
-                <MaterialIcons name="chevron-right" size={20} color="#dc3545" />
-              </TouchableOpacity>
+                <Text style={styles.ratingsText}>{t('your_ratings')}</Text>
+              </View>
+              <View style={styles.ratingsRight}>
+                <Text style={styles.ratingsValue}>3.0 ★</Text>
+                <MaterialIcons name="chevron-right" size={24} color="#333" />
+              </View>
             </View>
+          </TouchableOpacity>
+
+          {/* Account Settings Section */}
+          <Text style={styles.sectionTitle}>{t('account_settings')}</Text>
+          <View style={styles.optionsGroup}>
+            <TouchableOpacity style={styles.optionItem}>
+              <View style={styles.optionLeft}>
+                <FontAwesome5 name="rupee-sign" size={18} color="#333" />
+                <Text style={styles.optionText}>{t('payment_acceptance_mode')}</Text>
+              </View>
+              <MaterialIcons name="chevron-right" size={24} color="#ccc" />
+            </TouchableOpacity>
+            
+            <View style={styles.divider} />
+            
+            <TouchableOpacity style={styles.optionItem} onPress={() => setIsLanguageModalVisible(true)}>
+              <View style={styles.optionLeft}>
+                <Ionicons name="globe-outline" size={20} color="#333" />
+                <Text style={styles.optionText}>{t('language')}</Text>
+              </View>
+              <View style={styles.optionRight}>
+                <Text style={styles.languageIndicator}>{getLanguageName(language)}</Text>
+                <MaterialIcons name="chevron-right" size={24} color="#ccc" />
+              </View>
+            </TouchableOpacity>
+          </View>
+
+          {/* Help & Support Section */}
+          <Text style={styles.sectionTitle}>{t('help_support')}</Text>
+          <View style={styles.optionsGroup}>
+            <TouchableOpacity style={styles.optionItem}>
+              <View style={styles.optionLeft}>
+                <MaterialIcons name="thumb-up-off-alt" size={20} color="#333" />
+                <Text style={styles.optionText}>{t('give_us_feedback')}</Text>
+              </View>
+              <MaterialIcons name="chevron-right" size={24} color="#ccc" />
+            </TouchableOpacity>
+            
+            <View style={styles.divider} />
+            
+            <TouchableOpacity style={styles.optionItem} onPress={() => onNavigate('help-support')}>
+              <View style={styles.optionLeft}>
+                <Ionicons name="help-circle-outline" size={22} color="#333" />
+                <Text style={styles.optionText}>{t('help_support_item')}</Text>
+              </View>
+              <MaterialIcons name="chevron-right" size={24} color="#ccc" />
+            </TouchableOpacity>
+          </View>
+
+          {/* More Section */}
+          <Text style={styles.sectionTitle}>{t('more')}</Text>
+          <View style={styles.optionsGroup}>
+            <TouchableOpacity style={styles.optionItem}>
+              <View style={styles.optionLeft}>
+                <Ionicons name="shield-outline" size={20} color="#333" />
+                <Text style={styles.optionText}>{t('privacy_policy')}</Text>
+              </View>
+              <MaterialIcons name="chevron-right" size={24} color="#ccc" />
+            </TouchableOpacity>
+            
+            <View style={styles.divider} />
+            
+            <TouchableOpacity style={styles.optionItem}>
+              <View style={styles.optionLeft}>
+                <MaterialIcons name="list-alt" size={20} color="#333" />
+                <Text style={styles.optionText}>{t('content_policy')}</Text>
+              </View>
+              <MaterialIcons name="chevron-right" size={24} color="#ccc" />
+            </TouchableOpacity>
+
+            <View style={styles.divider} />
+            
+            <TouchableOpacity style={styles.optionItem}>
+              <View style={styles.optionLeft}>
+                <MaterialIcons name="description" size={20} color="#333" />
+                <Text style={styles.optionText}>{t('terms_conditions')}</Text>
+              </View>
+              <MaterialIcons name="chevron-right" size={24} color="#ccc" />
+            </TouchableOpacity>
+
+            <View style={styles.divider} />
+            
+            <TouchableOpacity style={styles.optionItem} onPress={handleLogout}>
+              <View style={styles.optionLeft}>
+                <MaterialIcons name="logout" size={20} color="#dc3545" />
+                <Text style={[styles.optionText, { color: '#dc3545' }]}>{t('logout')}</Text>
+              </View>
+              <MaterialIcons name="chevron-right" size={24} color="#dc3545" />
+            </TouchableOpacity>
+          </View>
+
+          {/* App Info */}
+          <View style={styles.appInfo}>
+            <Text style={styles.appInfoText}>{t('app_version')}</Text>
+            <Text style={styles.appVersion}>v0.0.0</Text>
           </View>
         </View>
       </ScrollView>
+
+      {/* Language Selection Modal */}
+      {isLanguageModalVisible && (
+        <View style={styles.modalOverlay}>
+          <TouchableOpacity 
+            style={styles.modalCloseArea} 
+            activeOpacity={1} 
+            onPress={() => setIsLanguageModalVisible(false)} 
+          />
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>{t('select_language')}</Text>
+            </View>
+            
+            <View style={styles.languageList}>
+              {languages.map((lang) => (
+                <TouchableOpacity 
+                  key={lang.code} 
+                  style={[
+                    styles.languageItem,
+                    language === lang.code && styles.activeLanguageItem
+                  ]}
+                  onPress={() => handleLanguageSelect(lang.code)}
+                >
+                  <Text style={[
+                    styles.languageItemText,
+                    language === lang.code && styles.activeLanguageText
+                  ]}>
+                    {lang.nativeName}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </View>
+        </View>
+      )}
     </View>
   );
 };
@@ -200,412 +233,230 @@ const ProfileScreen = ({ onBack, onNavigate }: ProfileScreenProps) => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F7F9FC',
+    backgroundColor: '#fff',
   },
   scrollView: {
     flex: 1,
   },
-  scrollContent: {
-    paddingBottom: 160, // Increased for proper scrolling clearance with bottom navigation
-  },
   header: {
-    backgroundColor: '#1B7332',
+    backgroundColor: '#0a421a', // Dark green
+    paddingTop: Platform.OS === 'ios' ? 60 : 40,
+    paddingBottom: 40,
     paddingHorizontal: 20,
-    paddingTop: 44, // Safe area for status bar
-    paddingBottom: 12,
-    borderBottomLeftRadius: 20,
-    borderBottomRightRadius: 20,
-    shadowColor: '#1B7332',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 4,
-    elevation: 4,
-  },
-  headerNav: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 12, // Reduced from 24
-  },
-  backButton: {
-    padding: 8,
-    borderRadius: 8,
-  },
-  headerTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: 'white',
-    flex: 1,
-    textAlign: 'center',
-  },
-  headerSpacer: {
-    width: 40,
-  },
-  profileInfo: {
-    paddingHorizontal: 4,
-  },
-  profileContent: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 16,
-  },
-  avatarContainer: {
     position: 'relative',
   },
+  backButton: {
+    position: 'absolute',
+    top: Platform.OS === 'ios' ? 60 : 40,
+    left: 20,
+    zIndex: 10,
+  },
+  headerContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 40,
+  },
+  avatarContainer: {
+    marginRight: 15,
+  },
   avatar: {
-    width: 56,
-    height: 56,
-    backgroundColor: 'rgba(255, 255, 255, 0.2)',
-    borderRadius: 28,
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: 'rgba(255,255,255,0.2)',
     justifyContent: 'center',
     alignItems: 'center',
+    overflow: 'hidden',
     borderWidth: 2,
-    borderColor: 'white',
+    borderColor: 'rgba(255,255,255,0.3)',
   },
-  userInfo: {
+  avatarImage: {
+    width: '100%',
+    height: '100%',
+  },
+  headerInfo: {
     flex: 1,
   },
   userName: {
     fontSize: 22,
-    fontWeight: 'bold',
+    fontWeight: '700',
     color: 'white',
     marginBottom: 4,
   },
   userPhone: {
-    fontSize: 15,
-    color: '#E8F5E8',
-    fontWeight: '500',
+    fontSize: 16,
+    color: 'rgba(255,255,255,0.8)',
   },
   content: {
-    padding: 16,
+    padding: 20,
+    backgroundColor: '#fff',
+    borderTopLeftRadius: 0,
+    borderTopRightRadius: 0,
+    marginTop: 0,
   },
-  section: {
-    marginBottom: 16, // Reduced from 24
+  ratingsCard: {
+    backgroundColor: '#fffbeb', // Light amber/yellow
+    borderRadius: 12,
+    padding: 18,
+    marginBottom: 25,
+    borderWidth: 1,
+    borderColor: '#fef3c7',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  ratingsContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  ratingsLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  starIconContainer: {
+    marginRight: 10,
+  },
+  ratingsText: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#333',
+  },
+  ratingsRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  ratingsValue: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#333',
+    marginRight: 10,
   },
   sectionTitle: {
-    fontSize: 16, // Reduced from 18
-    fontWeight: 'bold',
-    color: '#333',
-    marginBottom: 12, // Reduced from 16
-  },
-  optionsContainer: {
-    gap: 12,
-  },
-  optionCard: {
-    backgroundColor: 'white',
-    borderRadius: 10, // Reduced from 12
-    padding: 12, // Reduced from 16
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.08,
-    shadowRadius: 3,
-    elevation: 2,
-    borderWidth: 1,
-    borderColor: 'rgba(0, 0, 0, 0.05)',
-    minHeight: 64, // Reduced from 72
-  },
-  optionContent: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 16,
-  },
-  optionIcon: {
-    width: 40, // Reduced from 48
-    height: 40, // Reduced from 48
-    backgroundColor: '#E8F5E8',
-    borderRadius: 10, // Reduced from 12
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  optionTextContainer: {
-    flex: 1,
-  },
-  optionTitle: {
-    fontSize: 15, // Reduced from 16
-    fontWeight: 'bold',
-    color: '#333',
-    marginBottom: 2,
-  },
-  optionSubtitle: {
-    fontSize: 13, // Reduced from 14
-    color: '#6c757d',
-  },
-
-  logoutButton: {
-    backgroundColor: '#dc3545',
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 16,
-    borderRadius: 12,
-    gap: 8,
-    shadowColor: '#dc3545',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 4,
-    elevation: 4,
-  },
-  logoutButtonText: {
-    color: 'white',
-    fontSize: 16,
-    fontWeight: 'bold',
-  },
-
-  // Enhanced Header Styles
-  modernHeader: {
-    backgroundColor: '#1B7332',
-    paddingTop: 44,
-    paddingBottom: 12,
-    borderBottomLeftRadius: 16,
-    borderBottomRightRadius: 16,
-    shadowColor: '#1B7332',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.2,
-    shadowRadius: 8,
-    elevation: 6,
-  },
-  headerGradient: {
-    paddingHorizontal: 20,
-  },
-  navBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 12,
-  },
-  modernBackButton: {
-    width: 36,
-    height: 36,
-    backgroundColor: 'rgba(255, 255, 255, 0.15)',
-    borderRadius: 18,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  navTitleContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    flex: 1,
-    justifyContent: 'center',
-  },
-  modernHeaderTitle: {
-    fontSize: 16,
+    fontSize: 14,
     fontWeight: '700',
-    color: 'white',
-  },
-  editButton: {
-    width: 36,
-    height: 36,
-    backgroundColor: 'rgba(255, 255, 255, 0.15)',
-    borderRadius: 18,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  profileCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(255, 255, 255, 0.1)',
-    borderRadius: 12,
-    padding: 12,
-    gap: 12,
-  },
-  avatarSection: {
-    alignItems: 'center',
-  },
-  modernAvatar: {
-    width: 52,
-    height: 52,
-    backgroundColor: 'rgba(255, 255, 255, 0.2)',
-    borderRadius: 26,
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 2,
-    borderColor: 'white',
-    position: 'relative',
-  },
-  cameraButton: {
-    position: 'absolute',
-    bottom: -1,
-    right: -1,
-    width: 20,
-    height: 20,
-    backgroundColor: 'white',
-    borderRadius: 10,
-    justifyContent: 'center',
-    alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 4,
-    elevation: 4,
-  },
-
-  userDetails: {
-    flex: 1,
-  },
-  modernUserName: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: 'white',
-    marginBottom: 3,
-  },
-  modernUserPhone: {
-    fontSize: 13,
-    color: 'rgba(255, 255, 255, 0.8)',
-    marginBottom: 6,
-  },
-  verificationBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'white',
-    paddingHorizontal: 6,
-    paddingVertical: 3,
-    borderRadius: 10,
-    alignSelf: 'flex-start',
-    gap: 3,
-  },
-  verifiedText: {
-    fontSize: 10,
-    color: '#1B7332',
-    fontWeight: '600',
-  },
-
-
-
-  // Category Styles
-  categorySection: {
-    marginBottom: 24,
-  },
-  categoryHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    color: '#999',
     marginBottom: 12,
-    gap: 8,
+    letterSpacing: 0.5,
   },
-  categoryIndicator: {
-    width: 4,
-    height: 16,
-    borderRadius: 2,
-  },
-  categoryTitle: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: '#333',
-  },
-  categoryOptionsContainer: {
-    gap: 8,
-  },
-  modernOptionCard: {
-    backgroundColor: 'white',
-    borderRadius: 12,
-    padding: 16,
+  optionsGroup: {
+    backgroundColor: '#fff',
+    borderRadius: 16,
+    marginBottom: 25,
+    borderWidth: 1,
+    borderColor: '#f0f0f0',
+    overflow: 'hidden',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.08,
-    shadowRadius: 3,
-    elevation: 2,
-    borderWidth: 1,
-    borderColor: 'rgba(0, 0, 0, 0.05)',
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 1,
   },
-  modernOptionContent: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-  },
-  modernOptionIcon: {
-    width: 44,
-    height: 44,
-    borderRadius: 12,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  modernOptionTextContainer: {
-    flex: 1,
-  },
-  optionHeader: {
+  optionItem: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+    padding: 16,
+  },
+  optionLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  optionText: {
+    fontSize: 16,
+    fontWeight: '500',
+    color: '#333',
+  },
+  optionRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  languageIndicator: {
+    fontSize: 14,
+    color: '#888',
+  },
+  divider: {
+    height: 1,
+    backgroundColor: '#f5f5f5',
+    marginHorizontal: 0,
+  },
+  appInfo: {
+    alignItems: 'center',
+    marginTop: 20,
+    marginBottom: 100, // For bottom nav
+  },
+  appInfoText: {
+    fontSize: 14,
+    color: '#bbb',
     marginBottom: 4,
   },
-  modernOptionTitle: {
-    fontSize: 15,
-    fontWeight: 'bold',
-    color: '#333',
+  appVersion: {
+    fontSize: 14,
+    color: '#bbb',
+  },
+  modalOverlay: {
+    position: 'absolute',
+    top: 0,
+    bottom: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'flex-end',
+    zIndex: 2000,
+  },
+  modalCloseArea: {
     flex: 1,
   },
-  optionBadge: {
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: 8,
-    marginLeft: 8,
-  },
-  badgeText: {
-    fontSize: 10,
-    fontWeight: '600',
-  },
-  modernOptionSubtitle: {
-    fontSize: 13,
-    color: '#6c757d',
-  },
-
-  // Security Section Styles
-  securitySection: {
-    marginBottom: 24,
-  },
-  securityOptions: {
+  modalContent: {
     backgroundColor: 'white',
-    borderRadius: 12,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.08,
-    shadowRadius: 3,
-    elevation: 2,
-    borderWidth: 1,
-    borderColor: 'rgba(0, 0, 0, 0.05)',
-    overflow: 'hidden',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    paddingBottom: Platform.OS === 'ios' ? 40 : 20,
+    maxHeight: '50%',
   },
-  securityOption: {
+  modalHeader: {
+    padding: 24,
+    paddingBottom: 10,
     flexDirection: 'row',
-    alignItems: 'center',
-    padding: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(0, 0, 0, 0.05)',
-    gap: 12,
-  },
-  securityOptionIcon: {
-    width: 36,
-    height: 36,
-    backgroundColor: '#f8f9fa',
-    borderRadius: 18,
-    justifyContent: 'center',
+    justifyContent: 'flex-start',
     alignItems: 'center',
   },
-  securityOptionText: {
-    flex: 1,
-    fontSize: 15,
+  modalTitle: {
+    fontSize: 24,
+    fontWeight: '700',
     color: '#333',
-    fontWeight: '500',
   },
-  logoutOption: {
+  languageList: {
+    padding: 24,
+    paddingTop: 10,
+  },
+  languageItem: {
     flexDirection: 'row',
+    justifyContent: 'flex-start',
     alignItems: 'center',
-    padding: 16,
-    gap: 12,
+    padding: 20,
+    borderRadius: 16,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: '#eee',
+    backgroundColor: '#fff',
   },
-  logoutOptionIcon: {
-    width: 36,
-    height: 36,
-    backgroundColor: '#fef2f2',
-    borderRadius: 18,
-    justifyContent: 'center',
-    alignItems: 'center',
+  activeLanguageItem: {
+    borderColor: '#0a421a',
+    backgroundColor: '#f6fff8',
   },
-  logoutOptionText: {
-    flex: 1,
-    fontSize: 15,
-    color: '#dc3545',
-    fontWeight: '600',
+  languageItemText: {
+    fontSize: 18,
+    fontWeight: '500',
+    color: '#333',
+  },
+  activeLanguageText: {
+    color: '#0a421a',
+    fontWeight: '700',
   },
 });
 

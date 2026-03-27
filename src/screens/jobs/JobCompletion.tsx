@@ -4,6 +4,7 @@ import { MaterialIcons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ScrapItem } from '../../types';
 import { getFloatingElementMargin } from '../../utils/safeAreaUtils';
+import { useLanguage } from '../../utils/i18n';
 
 interface JobCompletionProps {
   onJobComplete: (totalAmount: number) => void;
@@ -23,6 +24,7 @@ const scrapOptions: Omit<ScrapItem, 'weight'>[] = [
 ];
 
 const JobCompletion = ({ onJobComplete, onBack, onShowToast }: JobCompletionProps) => {
+  const { t } = useLanguage();
   const insets = useSafeAreaInsets();
   const floatingMargin = getFloatingElementMargin();
   
@@ -103,7 +105,7 @@ const JobCompletion = ({ onJobComplete, onBack, onShowToast }: JobCompletionProp
         <TouchableOpacity style={styles.backButton} onPress={onBack}>
           <MaterialIcons name="arrow-back" size={24} color="white" />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Calculate Final Price</Text>
+        <Text style={styles.headerTitle}>{t('calculate_final_price')}</Text>
         <View style={styles.headerSpacer} />
       </View>
       
@@ -115,7 +117,7 @@ const JobCompletion = ({ onJobComplete, onBack, onShowToast }: JobCompletionProp
                 <MaterialIcons name={item.icon as any} size={24} color="white" />
               </View>
               <View style={styles.scrapInfo}>
-                <Text style={styles.scrapType}>{item.type}</Text>
+                <Text style={styles.scrapType}>{t(item.type.toLowerCase())}</Text>
                 <Text style={styles.scrapRate}>₹{item.ratePerKg}/kg</Text>
               </View>
               <TouchableOpacity 
@@ -128,7 +130,7 @@ const JobCompletion = ({ onJobComplete, onBack, onShowToast }: JobCompletionProp
             </View>
             <View style={styles.scrapInput}>
               <View style={styles.weightContainer}>
-                <Text style={styles.weightLabel}>Weight (kg)</Text>
+                <Text style={styles.weightLabel}>{t('weight_kg')}</Text>
                 <TextInput
                   style={styles.weightInput}
                   value={item.weight?.toString() || ''}
@@ -150,7 +152,7 @@ const JobCompletion = ({ onJobComplete, onBack, onShowToast }: JobCompletionProp
           disabled={scrapItems.length >= scrapOptions.length}
         >
           <MaterialIcons name="add-circle" size={24} color="#1B7332" />
-          <Text style={styles.addButtonText}>Add Another Scrap Type</Text>
+          <Text style={styles.addButtonText}>{t('add_another_scrap')}</Text>
         </TouchableOpacity>
       </ScrollView>
 
@@ -166,8 +168,8 @@ const JobCompletion = ({ onJobComplete, onBack, onShowToast }: JobCompletionProp
               <MaterialIcons name="currency-rupee" size={24} color="white" />
             </View>
             <View style={styles.totalInfo}>
-              <Text style={styles.totalTitle}>Total Amount</Text>
-              <Text style={styles.totalSubtitle}>Payable to Customer</Text>
+              <Text style={styles.totalTitle}>{t('total_amount_payable')}</Text>
+              <Text style={styles.totalSubtitle}>{t('payable_to_customer')}</Text>
             </View>
           </View>
           <Text style={styles.totalAmount}>₹{totalAmount.toFixed(2)}</Text>
@@ -179,7 +181,7 @@ const JobCompletion = ({ onJobComplete, onBack, onShowToast }: JobCompletionProp
         >
           <MaterialIcons name="check-circle" size={20} color="white" />
           <Text style={styles.completeButtonText}>
-            {isLoading ? 'Processing...' : 'Complete & Finalize'}
+            {isLoading ? t('processing') : t('complete_finalize')}
           </Text>
         </TouchableOpacity>
       </View>

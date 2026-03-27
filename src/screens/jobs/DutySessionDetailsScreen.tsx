@@ -1,14 +1,14 @@
+import { Ionicons, MaterialIcons } from '@expo/vector-icons';
 import React from 'react';
-import { View, Text, TouchableOpacity, ScrollView, Image, StatusBar } from 'react-native';
-import { MaterialIcons, Ionicons } from '@expo/vector-icons';
+import { Image, ScrollView, StatusBar, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 interface DutySessionDetailsScreenProps {
   onBack: () => void;
-  // In a real app we'd pass session ID/Details here
+  onNavigate: (screen: string) => void;
 }
 
-const DutySessionDetailsScreen = ({ onBack }: DutySessionDetailsScreenProps) => {
+const DutySessionDetailsScreen = ({ onBack, onNavigate }: DutySessionDetailsScreenProps) => {
   return (
     <SafeAreaView className="flex-1 bg-white" edges={['top', 'bottom']}>
       <StatusBar barStyle="dark-content" backgroundColor="#ffffff" />
@@ -88,10 +88,13 @@ const DutySessionDetailsScreen = ({ onBack }: DutySessionDetailsScreenProps) => 
           
           <View className="bg-white rounded-2xl p-1 shadow-sm border border-gray-100 mb-4">
             <View className="flex-row gap-2 mb-2 p-3">
-              <View className="flex-1 bg-[#E8F5E9] rounded-xl p-4 items-center justify-center">
+              <TouchableOpacity 
+                className="flex-1 bg-[#E8F5E9] rounded-xl p-4 items-center justify-center"
+                onPress={() => onNavigate('handled-requests')}
+              >
                 <Text className="text-[24px] font-bold text-[#2E7D32] mb-1">1</Text>
                 <Text className="text-[14px] text-[#4CAF50] font-medium">Handled</Text>
-              </View>
+              </TouchableOpacity>
               <View className="flex-1 bg-[#FFEBEE] rounded-xl p-4 items-center justify-center">
                 <Text className="text-[24px] font-bold text-[#c62828] mb-1">1</Text>
                 <Text className="text-[14px] text-[#ef5350] font-medium">Cancelled</Text>
