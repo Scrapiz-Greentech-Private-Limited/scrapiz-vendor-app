@@ -42,6 +42,10 @@
           "organization": "scrapiz-greentech-private-l-w6"
         }
       ],
+      ["@rnmapbox/maps", {
+        "RNMapboxMapsImpl": "mapbox",
+        "RNMapboxMapsDownloadToken": "${MAPBOX_DOWNLOAD_TOKEN}"
+      }],
       "expo-localization"
     ],
     "experiments": {
