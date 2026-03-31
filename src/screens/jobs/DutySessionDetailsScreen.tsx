@@ -2,6 +2,8 @@ import { Ionicons, MaterialIcons } from '@expo/vector-icons';
 import React from 'react';
 import { Image, ScrollView, StatusBar, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import LiveSessionMap from '../../components/jobs/LiveSessionMap';
+import { MAP_CONFIG } from '../../config/mapConfig';
 
 interface DutySessionDetailsScreenProps {
   onBack: () => void;
@@ -28,6 +30,15 @@ const DutySessionDetailsScreen = ({ onBack, onNavigate }: DutySessionDetailsScre
         showsVerticalScrollIndicator={false}
         contentContainerStyle={{ paddingBottom: 40 }}
       >
+        {/* Live Map Section */}
+        <LiveSessionMap 
+          location={{ 
+            latitude: MAP_CONFIG.DEFAULT_CENTER[1], 
+            longitude: MAP_CONFIG.DEFAULT_CENTER[0] 
+          }} 
+          height={220}
+        />
+
         {/* Top Status Banner */}
         <View className="bg-[#EBEBEB] px-5 py-4 flex-row items-center justify-between">
           <View>
