@@ -1,286 +1,324 @@
-import React, { useState } from 'react';
-import { View, Text, TouchableOpacity, ScrollView, Image, StatusBar, Modal } from 'react-native';
-import { MaterialIcons, Ionicons } from '@expo/vector-icons';
+import React, { useEffect, useMemo, useState } from 'react';
+import {
+  ActivityIndicator,
+  Modal,
+  ScrollView,
+  StatusBar,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from 'react-native';
+import { Ionicons, MaterialIcons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import DatePicker from 'react-native-modern-datepicker';
-import { useLanguage } from '../../utils/i18n';
+import { ApiService } from '../../services/api';
+import { DutySession } from '../../types';
+import { useAuth } from '../../../hooks/useAuth';
 
 interface JobHistoryScreenProps {
   onBack: () => void;
-  onNavigate?: (screen: string) => void;
+  onNavigate?: (screen: string, params?: { session?: DutySession }) => void;
 }
 
-interface PastSession {
-  id: string;
-  driverName: string;
-  driverImage: string;
-  vehicleType: string;
-  vehicleNumber: string;
-  startTime: string;
-  endTime: string;
-}
+const periods = [
+  { label: 'This Week', value: 'this_week' as const },
+  { label: 'Last Month', value: 'last_month' as const },
+  { label: 'All Time', value: 'all_time' as const },
+];
 
-const dummySessions: PastSession[] = [
+const FALLBACK_SESSIONS: DutySession[] = [
   {
-    id: '1',
-    driverName: 'Rahul Kumar',
-    driverImage: 'https://i.pravatar.cc/150?img=11',
-    vehicleType: 'Access',
-    vehicleNumber: 'MH01DM8286',
-    startTime: '28 Jan, 12:15 PM',
-    endTime: '21 Feb, 8:06 PM',
+    session_id: 'fallback-session-1',
+    started_at: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString(),
+    ended_at: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000 + 4 * 60 * 60 * 1000).toISOString(),
+    duration_display: '4h 0m',
+    orders_completed: 3,
+    vehicle_number: 'MH01DM8286',
+    vehicle_type: 'bike',
+    start_lat: 19.0176,
+    start_lng: 72.8174,
+    status: 'offline',
   },
   {
-    id: '2',
-    driverName: 'Amit Singh',
-    driverImage: 'https://i.pravatar.cc/150?img=12',
-    vehicleType: 'Access',
-    vehicleNumber: 'MH01DM8286',
-    startTime: '8 Jan, 10:40 AM',
-    endTime: '13 Jan, 12:00 PM',
-  },
-  {
-    id: '3',
-    driverName: 'Rahul Kumar',
-    driverImage: 'https://i.pravatar.cc/150?img=11',
-    vehicleType: 'Access',
-    vehicleNumber: 'MH01DM8286',
-    startTime: '31 Dec, 8:04 PM',
-    endTime: '6 Jan, 10:17 AM',
+    session_id: 'fallback-session-2',
+    started_at: new Date(Date.now() - 4 * 24 * 60 * 60 * 1000).toISOString(),
+    ended_at: new Date(Date.now() - 4 * 24 * 60 * 60 * 1000 + 3 * 60 * 60 * 1000 + 30 * 60 * 1000).toISOString(),
+    duration_display: '3h 30m',
+    orders_completed: 2,
+    vehicle_number: 'MH01DM8286',
+    vehicle_type: 'bike',
+    start_lat: 19.0176,
+    start_lng: 72.8174,
+    status: 'offline',
   },
 ];
 
-const JobHistoryScreen = ({ onBack, onNavigate }: JobHistoryScreenProps) => {
-  const { t } = useLanguage();
-  const [selectedFilter, setSelectedFilter] = useState(t('last_month'));
-  const [showCalendar, setShowCalendar] = useState(false);
-  const [fromDate, setFromDate] = useState('21/02/2026');
-  const [toDate, setToDate] = useState('21/02/2026');
-  const [showFakeDatePicker, setShowFakeDatePicker] = useState<'from' | 'to' | null>(null);
+const formatSessionDate = (value?: string) => {
+  if (!value) {
+    return '-';
+  }
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return '-';
+  }
+  return date.toLocaleString('en-IN', {
+    day: '2-digit',
+    month: 'short',
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true,
+  });
+};
 
-  const handleDateSelect = (date: string) => {
-    setSelectedFilter(date);
-    setShowCalendar(false);
+const initials = (name: string) =>
+  name
+    .split(' ')
+    .slice(0, 2)
+    .map((part) => part.charAt(0).toUpperCase())
+    .join('');
+
+const JobHistoryScreen: React.FC<JobHistoryScreenProps> = ({ onBack, onNavigate }) => {
+  const { user } = useAuth();
+  const [periodIndex, setPeriodIndex] = useState(1);
+  const [sessions, setSessions] = useState<DutySession[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [showPicker, setShowPicker] = useState(false);
+
+  const period = periods[periodIndex];
+
+  const loadSessions = async (periodValue: 'this_week' | 'last_month' | 'all_time') => {
+    setIsLoading(true);
+    try {
+      const response = await ApiService.getDutySessions(periodValue);
+      const nextSessions = response.sessions || [];
+      setSessions(nextSessions.length ? nextSessions : FALLBACK_SESSIONS);
+    } catch {
+      setSessions(FALLBACK_SESSIONS);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
-  const renderSessionCard = (session: PastSession) => (
-    <TouchableOpacity 
-      key={session.id} 
-      className="bg-white rounded-xl mb-4 p-4 border border-gray-100 shadow-sm"
-      onPress={() => onNavigate?.('duty-session-details')}
-    >
-      <View className="flex-row items-center border-b border-gray-100 pb-3 mb-3">
-        <Image 
-          source={{ uri: session.driverImage }} 
-          className="w-12 h-12 rounded-full mr-3 grayscale opacity-80"
-        />
-        <Text className="text-[16px] font-bold text-gray-800">{session.driverName}</Text>
-      </View>
-      
-      <View className="flex-row items-center justify-between">
-        <View className="flex-row items-center">
-          <View className="w-10 h-10 rounded-full bg-gray-50 items-center justify-center border border-gray-100 mr-3">
-            <MaterialIcons name="two-wheeler" size={20} color="#9ca3af" />
-          </View>
-          <View>
-            <Text className="text-[14px] font-bold text-gray-800">{session.vehicleType}</Text>
-            <Text className="text-[12px] text-gray-500">{session.vehicleNumber}</Text>
-          </View>
-        </View>
-        <View className="items-end">
-          <Text className="text-[12px] text-gray-500 mb-1">
-            {t('started')} : <Text className="text-gray-700">{session.startTime}</Text>
-          </Text>
-          <Text className="text-[12px] text-gray-500">
-            {t('ended')} : <Text className="text-gray-700">{session.endTime}</Text>
-          </Text>
-        </View>
-      </View>
-    </TouchableOpacity>
-  );
+  useEffect(() => {
+    loadSessions(period.value);
+  }, [period.value]);
+
+  const displayName = useMemo(() => user?.name || 'Vendor', [user?.name]);
+
+  const shiftPeriod = (direction: -1 | 1) => {
+    setPeriodIndex((prev) => {
+      const next = prev + direction;
+      if (next < 0) {
+        return 0;
+      }
+      if (next > periods.length - 1) {
+        return periods.length - 1;
+      }
+      return next;
+    });
+  };
 
   return (
-    <SafeAreaView className="flex-1 bg-[#F8F9FA]" edges={['top', 'bottom']}>
+    <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
       <StatusBar barStyle="dark-content" backgroundColor="#F8F9FA" />
-      
-      {/* Header */}
-      <View className="px-5 pt-4 pb-2 flex-row items-center">
-        <TouchableOpacity onPress={onBack} className="p-2 mr-2">
-          <Ionicons name="chevron-back" size={24} color="#333" />
+
+      <View style={styles.header}>
+        <TouchableOpacity onPress={onBack} style={styles.backButton}>
+          <Ionicons name="chevron-back" size={24} color="#111827" />
         </TouchableOpacity>
-        <Text className="text-[28px] font-bold text-gray-900 tracking-tight flex-1">
-          {t('past_duty_sessions')}
-        </Text>
+        <Text style={styles.headerTitle}>Past duty sessions</Text>
       </View>
 
-      {/* Filter Selector */}
-      <View className="flex-row items-center justify-center py-4">
-        <TouchableOpacity className="w-10 h-10 bg-white rounded-full items-center justify-center border border-gray-100 shadow-sm">
-          <Ionicons name="arrow-back" size={18} color="#666" />
-        </TouchableOpacity>
-        
-        <TouchableOpacity 
-          onPress={() => setShowCalendar(true)}
-          className="mx-3 px-5 py-2.5 bg-white rounded-full border border-gray-200 shadow-sm flex-row items-center"
+      <View style={styles.filterRow}>
+        <TouchableOpacity
+          style={[styles.arrowButton, periodIndex === 0 && styles.arrowButtonDisabled]}
+          disabled={periodIndex === 0}
+          onPress={() => shiftPeriod(-1)}
         >
-          <Text className="text-[15px] font-medium text-gray-800 mr-2">{selectedFilter}</Text>
-          <Ionicons name="chevron-down" size={16} color="#666" />
+          <Ionicons name="arrow-back" size={18} color="#475569" />
         </TouchableOpacity>
 
-        <TouchableOpacity className="w-10 h-10 bg-white rounded-full items-center justify-center border border-gray-100 shadow-sm opacity-50">
-          <Ionicons name="arrow-forward" size={18} color="#666" />
+        <TouchableOpacity style={styles.periodButton} onPress={() => setShowPicker(true)}>
+          <Text style={styles.periodLabel}>{period.label}</Text>
+          <Ionicons name="chevron-down" size={16} color="#475569" />
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={[styles.arrowButton, periodIndex === periods.length - 1 && styles.arrowButtonDisabled]}
+          disabled={periodIndex === periods.length - 1}
+          onPress={() => shiftPeriod(1)}
+        >
+          <Ionicons name="arrow-forward" size={18} color="#475569" />
         </TouchableOpacity>
       </View>
 
-      {/* List */}
-      <ScrollView 
-        className="flex-1 px-5 pt-2"
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={{ paddingBottom: 40 }}
-      >
-        {dummySessions.map(renderSessionCard)}
-        {dummySessions.map(session => renderSessionCard({...session, id: session.id + '_dup'}))}
-      </ScrollView>
-
-      {/* Date Selection Modal */}
-      <Modal
-        visible={showCalendar}
-        transparent={true}
-        animationType="fade"
-        onRequestClose={() => setShowCalendar(false)}
-      >
-        <View className="flex-1 justify-end bg-black/40">
-          {/* Dismiss overlay */}
-          <TouchableOpacity 
-            style={{ flex: 1 }} 
-            activeOpacity={1} 
-            onPress={() => setShowCalendar(false)} 
-          />
-          
-          <View className="bg-white rounded-t-3xl p-6 pt-8 pb-10 shadow-2xl mt-auto">
-            {/* Modal Header */}
-            <View className="flex-row justify-between items-center mb-6">
-              <Text className="text-[20px] font-bold text-gray-900">{t('select_date')}</Text>
-              <Text className="text-[14px] text-gray-600">{t('today')}, 21 Feb</Text>
-            </View>
-            
-            <View className="border-b border-gray-100 mb-6" />
-
-            {/* Filter Pills */}
-            <View className="flex-row flex-wrap gap-y-3 gap-x-2 mb-6">
-              {['today', 'yesterday', 'last_7_days', 'this_month', 'last_month', 'past_6_months', 'this_year', 'lifetime'].map((key) => {
-                const option = t(key);
-                const isSelected = selectedFilter === option; // Treating selectedDate as string filter
-                return (
-                  <TouchableOpacity
-                    key={key}
-                    onPress={() => setSelectedFilter(option)}
-                    className={`px-4 py-2.5 rounded-full border ${
-                      isSelected 
-                        ? 'bg-[#1B7332] border-[#1B7332]' 
-                        : 'bg-white border-gray-200'
-                    }`}
-                  >
-                    <Text className={`text-[14px] font-medium ${
-                      isSelected ? 'text-white' : 'text-gray-700'
-                    }`}>
-                      {option}
-                    </Text>
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
-
-            {/* Or Divider */}
-            <View className="flex-row items-center mb-6">
-              <View className="flex-1 h-[1px] bg-gray-200" />
-              <Text className="mx-4 text-gray-400 text-[13px]">{t('or')}</Text>
-              <View className="flex-1 h-[1px] bg-gray-200" />
-            </View>
-
-            {/* Date Pickers */}
-            <View className="flex-row justify-between mb-8">
-              <View className="flex-1 mr-3">
-                <Text className="text-[13px] text-gray-600 mb-2">{t('from')}</Text>
-                <TouchableOpacity 
-                   onPress={() => setShowFakeDatePicker('from')}
-                   className="border border-gray-300 rounded-xl px-4 py-3 flex-row items-center justify-between"
-                >
-                  <Text className="text-[15px] text-gray-800 flex-1">{fromDate}</Text>
-                  <MaterialIcons name="calendar-today" size={20} color="#666" />
-                </TouchableOpacity>
-              </View>
-
-              <View className="flex-1 ml-3">
-                <Text className="text-[13px] text-gray-600 mb-2">{t('to')}</Text>
-                <TouchableOpacity 
-                   onPress={() => setShowFakeDatePicker('to')}
-                   className="border border-gray-300 rounded-xl px-4 py-3 flex-row items-center justify-between"
-                >
-                  <Text className="text-[15px] text-gray-800 flex-1">{toDate}</Text>
-                  <MaterialIcons name="calendar-today" size={20} color="#666" />
-                </TouchableOpacity>
-              </View>
-            </View>
-
-            {/* Done Button */}
-            <TouchableOpacity 
-              onPress={() => handleDateSelect(selectedFilter)}
-              className="bg-[#1B7332] py-4 rounded-xl items-center mb-6"
+      {isLoading ? (
+        <View style={styles.loaderWrap}>
+          <ActivityIndicator size="large" color="#1B7332" />
+        </View>
+      ) : (
+        <ScrollView contentContainerStyle={styles.listContent} showsVerticalScrollIndicator={false}>
+          {sessions.map((session) => (
+            <TouchableOpacity
+              key={session.session_id}
+              style={styles.card}
+              onPress={() => onNavigate?.('duty-session-details', { session })}
+              activeOpacity={0.85}
             >
-              <Text className="text-white text-[16px] font-bold">{t('done')}</Text>
+              <View style={styles.topRow}>
+                <View style={styles.avatar}>
+                  <Text style={styles.avatarText}>{initials(displayName)}</Text>
+                </View>
+                <View style={styles.nameWrap}>
+                  <Text style={styles.name}>{displayName}</Text>
+                </View>
+                <View style={styles.durationPill}>
+                  <Ionicons name="time-outline" size={14} color="#6B7280" />
+                  <Text style={styles.durationText}>{session.duration_display}</Text>
+                </View>
+              </View>
+
+              <View style={styles.divider} />
+
+              <View style={styles.bottomRow}>
+                <View style={styles.vehicleWrap}>
+                  <View style={styles.vehicleIconBox}>
+                    <MaterialIcons name="two-wheeler" size={18} color="#94A3B8" />
+                  </View>
+                  <View>
+                    <Text style={styles.vehicleTitle}>Access</Text>
+                    <Text style={styles.vehicleSub}>{session.vehicle_number}</Text>
+                  </View>
+                </View>
+                <View style={styles.timeWrap}>
+                  <Text style={styles.timeLine}>started : {formatSessionDate(session.started_at)}</Text>
+                  <Text style={styles.timeLine}>ended : {formatSessionDate(session.ended_at)}</Text>
+                  <Text style={styles.ordersLine}>{session.orders_completed} previous orders</Text>
+                </View>
+              </View>
             </TouchableOpacity>
+          ))}
+
+          {!sessions.length && <Text style={styles.emptyText}>No sessions found for this period.</Text>}
+        </ScrollView>
+      )}
+
+      <Modal visible={showPicker} transparent animationType="fade" onRequestClose={() => setShowPicker(false)}>
+        <TouchableOpacity style={styles.modalBackdrop} activeOpacity={1} onPress={() => setShowPicker(false)}>
+          <View style={styles.modalCard}>
+            {periods.map((option, index) => {
+              const selected = period.value === option.value;
+              return (
+                <TouchableOpacity
+                  key={option.value}
+                  style={[styles.modalOption, selected && styles.modalOptionSelected]}
+                  onPress={() => {
+                    setPeriodIndex(index);
+                    setShowPicker(false);
+                  }}
+                >
+                  <Text style={[styles.modalOptionText, selected && styles.modalOptionTextSelected]}>{option.label}</Text>
+                </TouchableOpacity>
+              );
+            })}
           </View>
-        </View>
+        </TouchableOpacity>
       </Modal>
-
-      {/* Fake Date Picker Modal */}
-      <Modal
-        visible={showFakeDatePicker !== null}
-        transparent={true}
-        animationType="slide"
-        onRequestClose={() => setShowFakeDatePicker(null)}
-      >
-        <View className="flex-1 justify-end bg-black/40">
-          <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={() => setShowFakeDatePicker(null)} />
-          <View className="bg-white px-5 pb-8 pt-5 rounded-t-3xl">
-            <View className="flex-row justify-between items-center mb-4">
-              <Text className="text-[18px] font-bold text-gray-900">
-                {t('select_date')} {showFakeDatePicker === 'from' ? t('from') : t('to')}
-              </Text>
-              <TouchableOpacity onPress={() => setShowFakeDatePicker(null)} className="p-2 bg-gray-100 rounded-full">
-                <MaterialIcons name="close" size={20} color="#444" />
-              </TouchableOpacity>
-            </View>
-
-            <DatePicker
-              options={{
-                backgroundColor: '#ffffff',
-                textHeaderColor: '#1B7332',
-                textDefaultColor: '#333333',
-                selectedTextColor: '#ffffff',
-                mainColor: '#1B7332',
-                textSecondaryColor: '#999999',
-                borderColor: 'rgba(122, 146, 165, 0.1)',
-              }}
-              isGregorian={true}
-              mode="calendar"
-              onSelectedChange={(date: string) => {
-                // format YYYY/MM/DD to DD/MM/YYYY for dummy consistency
-                const [year, month, day] = date.split('/');
-                const formattedDate = `${day}/${month}/${year}`;
-                if (showFakeDatePicker === 'from') setFromDate(formattedDate);
-                if (showFakeDatePicker === 'to') setToDate(formattedDate);
-                setShowFakeDatePicker(null);
-              }}
-              style={{ borderRadius: 10 }}
-            />
-          </View>
-        </View>
-      </Modal>
-
     </SafeAreaView>
   );
 };
+
+const styles = StyleSheet.create({
+  container: { flex: 1, backgroundColor: '#F8F9FA' },
+  header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingTop: 8, paddingBottom: 6 },
+  backButton: { width: 36, height: 36, justifyContent: 'center', alignItems: 'center', marginRight: 4 },
+  headerTitle: { fontSize: 54 / 2, fontWeight: '800', color: '#111827', textTransform: 'none' },
+  filterRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 12 },
+  arrowButton: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  arrowButtonDisabled: { opacity: 0.35 },
+  periodButton: {
+    marginHorizontal: 12,
+    minWidth: 170,
+    height: 46,
+    borderRadius: 23,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    backgroundColor: '#FFFFFF',
+    paddingHorizontal: 20,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+  },
+  periodLabel: { fontSize: 17, fontWeight: '500', color: '#1F2937' },
+  loaderWrap: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  listContent: { paddingHorizontal: 16, paddingTop: 6, paddingBottom: 24, gap: 12 },
+  card: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    padding: 14,
+  },
+  topRow: { flexDirection: 'row', alignItems: 'center' },
+  avatar: {
+    width: 54,
+    height: 54,
+    borderRadius: 27,
+    backgroundColor: '#E5E7EB',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  avatarText: { fontSize: 18, fontWeight: '700', color: '#374151' },
+  nameWrap: { marginLeft: 12, flex: 1 },
+  name: { fontSize: 42 / 2, fontWeight: '800', color: '#1F2937' },
+  durationPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    gap: 6,
+  },
+  durationText: { fontSize: 15, fontWeight: '600', color: '#4B5563' },
+  divider: { height: 1, backgroundColor: '#F1F5F9', marginVertical: 12 },
+  bottomRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  vehicleWrap: { flexDirection: 'row', alignItems: 'center', flex: 1 },
+  vehicleIconBox: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 10,
+  },
+  vehicleTitle: { fontSize: 18, fontWeight: '800', color: '#1F2937' },
+  vehicleSub: { fontSize: 16, color: '#6B7280', marginTop: 2 },
+  timeWrap: { marginLeft: 10, alignItems: 'flex-start' },
+  timeLine: { fontSize: 13, color: '#4B5563', marginVertical: 1 },
+  ordersLine: { fontSize: 12, color: '#1B7332', marginTop: 3, fontWeight: '700' },
+  emptyText: { textAlign: 'center', color: '#6B7280', marginTop: 20 },
+  modalBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.25)', justifyContent: 'center', paddingHorizontal: 28 },
+  modalCard: { backgroundColor: '#FFFFFF', borderRadius: 14, padding: 8 },
+  modalOption: { paddingHorizontal: 14, paddingVertical: 12, borderRadius: 10 },
+  modalOptionSelected: { backgroundColor: '#ECFDF5' },
+  modalOptionText: { color: '#1F2937', fontSize: 16, fontWeight: '500' },
+  modalOptionTextSelected: { color: '#166534', fontWeight: '700' },
+});
 
 export default JobHistoryScreen;

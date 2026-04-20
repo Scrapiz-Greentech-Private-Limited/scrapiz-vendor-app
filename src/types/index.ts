@@ -3,7 +3,19 @@ export interface User {
   name: string;
   phone: string;
   isOnline: boolean;
+  email?: string;
   image?: string;
+  age?: number | null;
+  serviceCity?: string;
+  serviceArea?: string;
+  vendorStatus?: string;
+  vehicleNumber?: string;
+  vehicleType?: string;
+  hasVendorProfile?: boolean;
+  canGoOnline?: boolean;
+  onboardingComplete?: boolean;
+  allowPendingAccessWhilePending?: boolean;
+  rejectionReason?: string | null;
 }
 
 export interface BookingRequest {
@@ -25,6 +37,7 @@ export interface BookingRequest {
   estimatedWeight?: string;
   baseRate?: number;
   distanceBonus?: number;
+  isFallback?: boolean;
 }
 
 export interface ActiveJob extends BookingRequest {
@@ -33,6 +46,117 @@ export interface ActiveJob extends BookingRequest {
     lat: number;
     lng: number;
   };
+  bookingId?: string;
+  selectedItems?: LeadOrderItem[];
+}
+
+export interface LeadOrderItem {
+  product_id: string | number;
+  product_name: string;
+  quantity: number;
+  unit: string;
+  min_rate: number;
+  max_rate: number;
+  image_url?: string;
+  category?: string;
+  is_fallback?: boolean;
+}
+
+export interface LeadDetailsResponse {
+  lead_id: string;
+  status: string;
+  expires_at?: string;
+  seconds_remaining: number;
+  distance_km: number;
+  estimated_minutes: number;
+  is_urgent: boolean;
+  pickup_address: string;
+  pickup_lat: number;
+  pickup_lng: number;
+  customer: {
+    name: string;
+    masked_phone: string;
+    rating: number;
+    total_orders: number;
+    is_verified: boolean;
+  };
+  order: {
+    order_number: string;
+    estimated_value_min: number;
+    estimated_value_max: number;
+    scheduled_at?: string;
+    items: LeadOrderItem[];
+  };
+}
+
+export interface LeadAcceptResponse {
+  booking_id: string;
+}
+
+export interface BookingActiveOrderItem {
+  product_id: string | number;
+  product_name: string;
+  quantity: number;
+  unit: string;
+  rate_per_unit: number;
+}
+
+export interface BookingActiveResponse {
+  booking_id: string;
+  status: string;
+  step: number | 'en_route' | 'arrived' | 'in_progress' | 'ready';
+  total_steps: number;
+  customer: {
+    name: string;
+    phone: string;
+    phone_masked?: boolean;
+    rating: number;
+  };
+  pickup_address: string;
+  pickup_lat: number;
+  pickup_lng: number;
+  material_summary: string;
+  distance_km: number;
+  order_items: BookingActiveOrderItem[];
+  started_at?: string;
+  arrived_at?: string;
+  contact_unlocked?: boolean;
+  quote?: {
+    status: string;
+    payment_method?: 'cash' | 'upi' | null;
+    total_amount: number;
+    customer_upi_id?: string;
+  };
+}
+
+export interface VendorLocationPayload {
+  latitude: number;
+  longitude: number;
+}
+
+export interface VendorCoordinates extends VendorLocationPayload {
+  heading?: number | null;
+  speed?: number | null;
+  accuracy?: number | null;
+  timestamp: number;
+}
+
+export interface SelectedPickupItem extends LeadOrderItem {
+  rate_per_unit?: number;
+  actual_weight_kg?: number;
+}
+
+export interface DutySession {
+  session_id: string;
+  started_at: string;
+  ended_at: string;
+  duration_display: string;
+  orders_completed: number;
+  vehicle_number: string;
+  vehicle_type: string;
+  start_lat: number;
+  start_lng: number;
+  status: 'live' | 'offline' | string;
 }
 
 export interface ScrapItem {

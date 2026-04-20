@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "219622752",
+    "project_id": "scrapiz-vendor",
+    "storage_bucket": "scrapiz-vendor.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:219622752:android:0e3001a16e1f3d9e2ec205",
+        "android_client_info": {
+          "package_name": "com.scrapizVendor.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCxvTlWScgN5e2HB-VyGf_M2ielrpbFCII"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

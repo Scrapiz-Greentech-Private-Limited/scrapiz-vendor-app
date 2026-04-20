@@ -1,24 +1,51 @@
 import { MaterialIcons } from '@expo/vector-icons';
 import React, { useState } from 'react';
 import {
-  ActivityIndicator, Dimensions, Image, ImageBackground,
-  KeyboardAvoidingView, Platform, SafeAreaView, ScrollView,
+  Alert,
+  ActivityIndicator, Dimensions, ImageBackground,
+  KeyboardAvoidingView, Platform, ScrollView,
   StatusBar, StyleSheet, Text, TextInput, TouchableOpacity, View
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { ApiService } from '../../services/api';
 
 const { height } = Dimensions.get('window');
 
-export default function SignupScreen({ onNavigateLogin, onNavigateOTP, onBack, onGoogleSuccess }: SignupProps) {
+interface SignupProps {
+  onNavigateLogin: () => void;
+  onNavigateOTP: (phone: string, details?: { name?: string }) => void;
+  onBack: () => void;
+}
+
+export default function SignupScreen({ onNavigateLogin, onNavigateOTP, onBack }: SignupProps) {
   const [name, setName] = useState('');
   const [businessName, setBusinessName] = useState('');
   const [phone, setPhone] = useState('');
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
 
+  const handleSendOtp = async () => {
+    if (phone.length !== 10) {
+      setError('Please enter a valid 10-digit phone number');
+      return;
+    }
+
+    setError('');
+    setIsLoading(true);
+    try {
+      await ApiService.sendPhoneOtp(`+91${phone}`);
+      onNavigateOTP(phone, { name });
+    } catch (error: any) {
+      Alert.alert('OTP Failed', error?.message || 'Unable to send OTP right now. Please try again.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   return (
     <View className="flex-1">
       <StatusBar barStyle="light-content" />
-      <ImageBackground source={require('../../../assets/images/auth.png')} className="flex-1 w-full h-full">
+      <ImageBackground source={require('../../../assets/images/login.png')} className="flex-1 w-full h-full">
         <SafeAreaView className="flex-1">
           <KeyboardAvoidingView 
             className="flex-1 bg-black/25"
@@ -62,20 +89,9 @@ export default function SignupScreen({ onNavigateLogin, onNavigateOTP, onBack, o
 
                 <TouchableOpacity 
                   className={`h-14 rounded-full justify-center items-center mt-2 ${isLoading ? 'bg-green-800/70' : 'bg-green-800'}`} 
-                  onPress={() => onNavigateOTP(phone)}
+                  onPress={handleSendOtp}
                 >
                   {isLoading ? <ActivityIndicator color="#fff" /> : <Text className="text-white text-lg font-bold">Get OTP</Text>}
-                </TouchableOpacity>
-
-                <View className="flex-row items-center my-6">
-                  <View className="flex-1 h-[1px] bg-slate-100" />
-                  <Text className="mx-3 text-slate-400 text-lg font-bold">OR</Text>
-                  <View className="flex-1 h-[1px] bg-slate-100" />
-                </View>
-
-                <TouchableOpacity className="flex-row h-[55px] rounded-full border border-gray-200 justify-center items-center gap-2.5" onPress={onGoogleSuccess}>
-                   <Image source={require('../../../assets/images/googleicon.png')} className="w-5 h-5" />
-                   <Text className="text-lg font-semibold text-slate-800">Continue with Google</Text>
                 </TouchableOpacity>
 
                 <View className="flex-row justify-center mt-6">

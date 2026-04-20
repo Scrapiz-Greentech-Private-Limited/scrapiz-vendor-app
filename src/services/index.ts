@@ -9,6 +9,10 @@ export * from './paymentService';
 export * from './creditRechargeService';
 export * from './creditApiService';
 export * from './offlineManager';
+export * from './vendorLocationStreamer';
+export * from './vendorLeadSocket';
+export * from './notifeeService';
+export * from './notifications';
 
 // Error Handling Services
 export * from './creditErrorHandler';

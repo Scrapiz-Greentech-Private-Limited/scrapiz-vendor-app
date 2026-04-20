@@ -128,7 +128,7 @@ const RequestDetailsScreen = ({ onBack, request }: RequestDetailsProps) => {
                     <Text className="text-gray-800 font-semibold">Rakesh Singh</Text>
                 </View>
 
-                <Text className="text-green-700 text-sm mb-6">You've paid the full amount. No dues left.</Text>
+                <Text className="text-green-700 text-sm mb-6">You have paid the full amount. No dues left.</Text>
 
                 {/* Assigned to Section */}
 {/* Assigned to Section */}

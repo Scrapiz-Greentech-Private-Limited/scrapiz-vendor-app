@@ -1,6 +1,6 @@
 // Screens
 export * from './screens/auth';
-export * from './screens/main';
+export { Dashboard, EarningsScreen, ManageScreen, BillsScreen, PurchaseBillDetailScreen } from './screens/main';
 export * from './screens/jobs';
 export * from './screens/profile';
 export * from './screens/settings';

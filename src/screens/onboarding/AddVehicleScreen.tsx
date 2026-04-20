@@ -17,11 +17,15 @@ interface AddVehicleScreenProps {
   onBack: () => void;
 }
 
+const VEHICLE_NUMBER_REQUIRED_TYPES = ["bike", "car", "mini-truck", "truck"];
+const VEHICLE_META_REQUIRED_TYPES = ["bike", "car", "mini-truck"];
+
 const VEHICLE_TYPES = [
   { id: "cycle", name: "Cycle", icon: "bicycle" },
   { id: "thela", name: "Thela", icon: "dolly" },
   { id: "bike", name: "Bike", icon: "motorbike" },
-  { id: "e-rickshaw", name: "E-rickshaw", icon: "moped" },
+  { id: "car", name: "Car", icon: "car" },
+  { id: "riksha", name: "Riksha", icon: "moped" },
   { id: "mini-truck", name: "Mini-truck", icon: "truck-delivery" },
   { id: "truck", name: "Truck", icon: "truck" },
 ];
@@ -33,11 +37,14 @@ export default function AddVehicleScreen({
   const [selectedType, setSelectedType] = useState("thela");
   const [vehicleNumber, setVehicleNumber] = useState("");
   const [vehicleName, setVehicleName] = useState("");
+  const [vehicleModelName, setVehicleModelName] = useState("");
   const [weightEquipment, setWeightEquipment] = useState("Digital Machine");
   const [showSuccess, setShowSuccess] = useState(false);
+  const requiresVehicleNumber = VEHICLE_NUMBER_REQUIRED_TYPES.includes(selectedType);
+  const requiresVehicleMeta = VEHICLE_META_REQUIRED_TYPES.includes(selectedType);
 
   const handleContinue = () => {
-    if (!vehicleNumber || !vehicleName) {
+    if ((requiresVehicleNumber && !vehicleNumber.trim()) || (requiresVehicleMeta && (!vehicleName.trim() || !vehicleModelName.trim()))) {
       alert("Please enter vehicle details");
       return;
     }
@@ -46,11 +53,14 @@ export default function AddVehicleScreen({
 
   const handleFinalSuccess = () => {
     setShowSuccess(false);
+    const selectedVehicle = VEHICLE_TYPES.find((item) => item.id === selectedType);
     onComplete({
       type: selectedType,
-      number: vehicleNumber,
-      name: vehicleName,
+      number: requiresVehicleNumber ? vehicleNumber.trim().toUpperCase() : undefined,
+      name: requiresVehicleMeta ? vehicleName.trim() : undefined,
+      modelName: requiresVehicleMeta ? vehicleModelName.trim() : undefined,
       equipment: weightEquipment,
+      label: selectedVehicle?.name || selectedType,
     });
   };
 
@@ -59,19 +69,20 @@ export default function AddVehicleScreen({
     return (
       <TouchableOpacity
         onPress={() => setSelectedType(item.id)}
-        className={`flex-1 aspect-square m-1.5 p-2 rounded-2xl border items-center justify-center ${
+        className={`m-1.5 rounded-2xl border items-center justify-center ${
           isSelected
             ? "bg-green-50 border-green-700"
             : "bg-white border-gray-200"
         }`}
+        style={{ width: "30.8%", minHeight: 136, paddingHorizontal: 8, paddingVertical: 12 }}
       >
         <MaterialCommunityIcons
           name={item.icon as any}
-          size={32}
+          size={28}
           color={isSelected ? "#15803d" : "#9CA3AF"}
         />
         <Text
-          className={`text-[12px] mt-2 font-medium ${isSelected ? "text-green-800 font-bold" : "text-gray-500"}`}
+          className={`text-[12px] mt-2 text-center font-medium ${isSelected ? "text-green-800 font-bold" : "text-gray-500"}`}
         >
           {item.name}
         </Text>
@@ -88,27 +99,45 @@ const Header = (
   const Footer = (
     <View className="mt-4">
       <View className="gap-y-4 mb-6">
-        <View>
-          <Text className="text-lg text-gray-500 mb-2 ml-1">Vehicle number</Text>
-          <TextInput
-            className="border border-gray-200 rounded-xl p-4 text-lg text-slate-900"
-            placeholder="Enter vehicle number"
-            placeholderTextColor="#9CA3AF"
-            value={vehicleNumber}
-            onChangeText={setVehicleNumber} // Focus will now be maintained
-          />
-        </View>
+        {requiresVehicleNumber ? (
+          <View>
+            <Text className="text-lg text-gray-500 mb-2 ml-1">Vehicle number</Text>
+            <TextInput
+              className="border border-gray-200 rounded-xl p-4 text-lg text-slate-900"
+              placeholder="Enter vehicle number"
+              placeholderTextColor="#9CA3AF"
+              value={vehicleNumber}
+              onChangeText={setVehicleNumber}
+              autoCapitalize="characters"
+            />
+          </View>
+        ) : null}
 
-        <View>
-          <Text className="text-lg text-gray-500 mb-2 ml-1">Vehicle name</Text>
-          <TextInput
-            className="border border-gray-200 rounded-xl p-4 text-lg text-slate-900"
-            placeholder="Enter Vehicle Name"
-            placeholderTextColor="#9CA3AF"
-            value={vehicleName}
-            onChangeText={setVehicleName}
-          />
-        </View>
+        {requiresVehicleMeta ? (
+          <>
+            <View>
+              <Text className="text-lg text-gray-500 mb-2 ml-1">Vehicle name</Text>
+              <TextInput
+                className="border border-gray-200 rounded-xl p-4 text-lg text-slate-900"
+                placeholder="Enter Vehicle Name"
+                placeholderTextColor="#9CA3AF"
+                value={vehicleName}
+                onChangeText={setVehicleName}
+              />
+            </View>
+
+            <View>
+              <Text className="text-lg text-gray-500 mb-2 ml-1">Vehicle model name</Text>
+              <TextInput
+                className="border border-gray-200 rounded-xl p-4 text-lg text-slate-900"
+                placeholder="Enter Vehicle Model"
+                placeholderTextColor="#9CA3AF"
+                value={vehicleModelName}
+                onChangeText={setVehicleModelName}
+              />
+            </View>
+          </>
+        ) : null}
       </View>
 
       <Text className="text-lg font-semibold text-gray-700 mb-4">
@@ -176,7 +205,7 @@ const Header = (
 
               <View className="border border-green-700 rounded-lg px-4 py-1.5 mb-6">
                 <Text className="text-green-800 font-bold tracking-widest uppercase">
-                  {vehicleNumber || "T6297"}
+                  {requiresVehicleNumber ? vehicleNumber || "MH02AB4567" : (VEHICLE_TYPES.find((item) => item.id === selectedType)?.name || "Vehicle")}
                 </Text>
               </View>
 

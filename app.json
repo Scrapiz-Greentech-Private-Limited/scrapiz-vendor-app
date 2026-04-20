@@ -1,10 +1,10 @@
 {
   "expo": {
-    "name": "Scrapiz-Vendor-App",
-    "slug": "Scrapiz-Vendor-App",
+    "name": "Scrapiz Partner",
+    "slug": "scrapiz-vendor",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/images/icon.png",
+    "icon": "./assets/images/image_splashScreen_green.jpg",
     "scheme": "scrapizvendorapp",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
@@ -12,20 +12,37 @@
       "supportsTablet": true
     },
     "android": {
+      "permissions": [
+        "ACCESS_COARSE_LOCATION",
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_BACKGROUND_LOCATION",
+        "FOREGROUND_SERVICE",
+        "FOREGROUND_SERVICE_LOCATION"
+      ],
       "adaptiveIcon": {
-        "backgroundColor": "#E6F4FE",
-        "foregroundImage": "./assets/images/android-icon-foreground.png",
-        "backgroundImage": "./assets/images/android-icon-background.png",
-        "monochromeImage": "./assets/images/android-icon-monochrome.png"
+        "foregroundImage": "./assets/images/image_splashScreen_green.jpg",
+        "backgroundColor": "#16a34a"
+      },
+      "config": {
+        "googleMaps": {
+          "apiKey": "AIzaSyCXv6HR4agCc7eHo02CjVgN4yMVxbvQRqg"
+        }
       },
       "edgeToEdgeEnabled": true,
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "package": "com.scrapizVendor.app",
+      "googleServicesFile": "./google-services1.json"
+    },
+    "notification": {
+      "icon": "./assets/images/android-icon-monochrome.png",
+      "color": "#16a34a"
     },
     "plugins": [
+      "expo-notifications",
       [
         "expo-splash-screen",
         {
-          "image": "./assets/images/splash-icon.png",
+          "image": "./assets/images/image_splashScreen_green.jpg",
           "imageWidth": 200,
           "resizeMode": "contain",
           "backgroundColor": "#ffffff",
@@ -34,6 +51,15 @@
           }
         }
       ],
+          [
+            "expo-location",
+            {
+              "locationWhenInUsePermission": "Allow $(PRODUCT_NAME) to access your location while using the app.",
+              "locationAlwaysAndWhenInUsePermission": "Allow $(PRODUCT_NAME) to use your location.",
+              "isAndroidBackgroundLocationEnabled": true,
+              "isAndroidForegroundServiceEnabled": true
+            }
+          ],
       [
         "@sentry/react-native/expo",
         {
@@ -44,12 +70,27 @@
       ],
       ["@rnmapbox/maps", {
         "RNMapboxMapsImpl": "mapbox",
-        "RNMapboxMapsDownloadToken": "${MAPBOX_DOWNLOAD_TOKEN}"
+        "RNMapboxMapsDownloadToken": "${MAPBOX_DOWNLOADS_TOKEN}"
+      }],
+      ["./plugins/withMapboxAccessToken", {
+        "accessToken": "${EXPO_PUBLIC_MAPBOX_API_KEY}"
       }],
       "expo-localization"
     ],
     "experiments": {
       "reactCompiler": true
+    },
+    "extra": {
+      "mapboxAccessToken": "${EXPO_PUBLIC_MAPBOX_API_KEY}",
+      "env":{
+        "EXPO_PUBLIC_API_URL": "https://api.scrapiz.in/api",
+        "EXPO_PUBLIC_API_BASE_URL": "https://api.scrapiz.in/api",
+        "EXPO_PUBLIC_ENABLE_VENDOR_FALLBACK_BOOKINGS": "false",
+        "EXPO_PUBLIC_VENDOR_FALLBACK_TESTING": "false",
+        "EXPO_PUBLIC_FRONTEND_SECRET": "ScrapizVendor#0nn$(tab!z",
+        "EXPO_PUBLIC_VENDOR_FRONTEND_SECRET": "ScrapizVendor#0nn$(tab!z"
+        
+      }
     }
   }
 }

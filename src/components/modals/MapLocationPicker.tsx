@@ -14,11 +14,9 @@ import Mapbox from '@rnmapbox/maps';
 import * as Location from 'expo-location';
 import { Ionicons, MaterialIcons } from '@expo/vector-icons';
 import { MAP_CONFIG } from '../../config/mapConfig';
-import Constants from 'expo-constants';
+import { ensureMapboxConfigured } from '../../config/mapbox';
 
-// Set Mapbox Access Token
-const MAPBOX_TOKEN = process.env.EXPO_PUBLIC_MAPBOX_API_KEY || '';
-Mapbox.setAccessToken(MAPBOX_TOKEN);
+ensureMapboxConfigured();
 
 interface LocationResult {
   latitude: number;

@@ -24,12 +24,13 @@ const BottomNavigation = ({ activeTab, onTabChange, jobCounts }: BottomNavigatio
     ? Math.max(insets.bottom + 4, 12) // Minimal padding for Android
     : Math.max(insets.bottom, 8); // iOS safe area
   
-  const tabs = [
+  const tabs: Array<{ key: string; label: string; icon: string; badge?: number }> = [
     { key: 'home', label: t('home'), icon: 'home' },
     { 
       key: 'ongoing', 
       label: t('manage'), 
-      icon: 'work'
+      icon: 'work',
+      badge: (jobCounts?.active || 0) + (jobCounts?.pending || 0) + (jobCounts?.upcoming || 0),
     },
     { key: 'profile', label: t('profile'), icon: 'person' },
     { key: 'more-menu', label: t('more_tabs'), icon: 'more-horiz' }

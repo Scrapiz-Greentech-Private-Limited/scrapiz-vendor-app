@@ -1,134 +1,224 @@
 import { Ionicons, MaterialIcons } from '@expo/vector-icons';
 import React from 'react';
-import { Image, ScrollView, StatusBar, Text, TouchableOpacity, View } from 'react-native';
+import { ScrollView, StatusBar, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { DutySession } from '../../types';
 import LiveSessionMap from '../../components/jobs/LiveSessionMap';
-import { MAP_CONFIG } from '../../config/mapConfig';
 
 interface DutySessionDetailsScreenProps {
   onBack: () => void;
-  onNavigate: (screen: string) => void;
+  session?: DutySession | null;
+  vendorName?: string;
 }
 
-const DutySessionDetailsScreen = ({ onBack, onNavigate }: DutySessionDetailsScreenProps) => {
+const formatSessionDate = (value?: string) => {
+  if (!value) {
+    return '-';
+  }
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return '-';
+  }
+  return date.toLocaleString('en-IN', {
+    day: '2-digit',
+    month: 'short',
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true,
+  });
+};
+
+const DutySessionDetailsScreen: React.FC<DutySessionDetailsScreenProps> = ({ onBack, session, vendorName = 'Vendor' }) => {
+  const activeSession: DutySession =
+    session ||
+    ({
+      session_id: 'local-session',
+      started_at: new Date().toISOString(),
+      ended_at: new Date().toISOString(),
+      duration_display: '0h',
+      orders_completed: 0,
+      vehicle_number: 'MH01DM8286',
+      vehicle_type: 'bike',
+      start_lat: 19.0176,
+      start_lng: 72.8174,
+      status: 'offline',
+    } as DutySession);
+
+  const statusLabel = activeSession.status === 'live' ? 'Live' : 'Offline';
+
   return (
-    <SafeAreaView className="flex-1 bg-white" edges={['top', 'bottom']}>
+    <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
       <StatusBar barStyle="dark-content" backgroundColor="#ffffff" />
-      
-      {/* Header */}
-      <View className="px-4 py-4 flex-row items-center border-b border-gray-100">
-        <TouchableOpacity onPress={onBack} className="p-2 mr-2">
-          <Ionicons name="chevron-back" size={24} color="#333" />
+
+      <View style={styles.header}>
+        <TouchableOpacity onPress={onBack} style={styles.backButton}>
+          <Ionicons name="chevron-back" size={24} color="#111827" />
         </TouchableOpacity>
-        <Text className="text-[20px] font-bold text-gray-900 flex-1 ml-4">
-          Duty session details
-        </Text>
+        <Text style={styles.headerTitle}>Duty session details</Text>
       </View>
 
-      <ScrollView 
-        className="flex-1 bg-[#F8F9FA]" 
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={{ paddingBottom: 40 }}
-      >
-        {/* Live Map Section */}
-        <LiveSessionMap 
-          location={{ 
-            latitude: MAP_CONFIG.DEFAULT_CENTER[1], 
-            longitude: MAP_CONFIG.DEFAULT_CENTER[0] 
-          }} 
-          height={220}
-        />
+      <ScrollView style={styles.scroll} contentContainerStyle={styles.content}>
+        <View style={styles.mapWrap}>
+          <LiveSessionMap
+            location={{ latitude: activeSession.start_lat, longitude: activeSession.start_lng }}
+            height={220}
+            label={activeSession.status === 'live' ? 'LIVE SESSION TRACKING' : 'SESSION LOCATION'}
+          />
+          {activeSession.status === 'live' && (
+            <View style={styles.livePill}>
+              <Text style={styles.liveText}>● LIVE SESSION TRACKING</Text>
+            </View>
+          )}
+        </View>
 
-        {/* Top Status Banner */}
-        <View className="bg-[#EBEBEB] px-5 py-4 flex-row items-center justify-between">
+        <View style={styles.statusCard}>
           <View>
-            <Text className="text-[16px] font-bold text-gray-800 mb-1">Offline</Text>
-            <Text className="text-[13px] text-gray-600">
-              (27 Dec, 11:34 PM - 31 Dec, 5:32 PM)
+            <Text style={styles.statusTitle}>{statusLabel}</Text>
+            <Text style={styles.statusRange}>
+              ({formatSessionDate(activeSession.started_at)} - {formatSessionDate(activeSession.ended_at)})
             </Text>
           </View>
-          <View className="bg-white px-3 py-1.5 rounded-full flex-row items-center shadow-sm border border-gray-100">
-            <Ionicons name="time-outline" size={14} color="#666" style={{ marginRight: 4 }} />
-            <Text className="text-[13px] font-medium text-gray-700">3d 17h</Text>
+          <View style={styles.durationPill}>
+            <Ionicons name="time-outline" size={14} color="#6B7280" />
+            <Text style={styles.durationText}>{activeSession.duration_display}</Text>
           </View>
         </View>
 
-        <View className="p-5">
-          {/* Vehicle Info Section */}
-          <Text className="text-[18px] font-bold text-gray-800 mb-4">Vehicle Info</Text>
-          
-          <View className="bg-white rounded-2xl p-4 flex-row items-center justify-between mb-8 shadow-sm border border-gray-100">
-            <View className="flex-row items-center flex-1">
-              <View className="w-12 h-12 bg-gray-50 rounded-xl items-center justify-center mr-4 border border-gray-100">
-                <MaterialIcons name="two-wheeler" size={24} color="#666" />
-              </View>
-              <View>
-                <Text className="text-[16px] font-bold text-gray-800 mb-0.5">Bike</Text>
-                <Text className="text-[13px] text-gray-400">Vehicle No: MH01DM8286</Text>
-              </View>
+        <Text style={styles.sectionTitle}>Vehicle Info</Text>
+        <View style={styles.vehicleCard}>
+          <View style={styles.vehicleLeft}>
+            <View style={styles.vehicleIconWrap}>
+              <MaterialIcons name="two-wheeler" size={24} color="#6B7280" />
             </View>
-            <TouchableOpacity className="px-4 py-2 rounded-full border border-green-600 ml-2">
-              <Text className="text-[13px] font-bold text-green-700">View</Text>
-            </TouchableOpacity>
-          </View>
-
-          {/* Past Members Section */}
-          <Text className="text-[18px] font-bold text-gray-800 mb-4">Past Members</Text>
-          
-          <View className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100 mb-8 flex-row items-center justify-between">
-            <View className="flex-row items-center flex-1">
-              <Image 
-                source={{ uri: 'https://i.pravatar.cc/150?img=11' }} 
-                className="w-14 h-14 rounded-full mr-4 grayscale opacity-80"
-              />
-              <View className="flex-1">
-                <Text className="text-[16px] font-bold text-gray-800 mb-1">Rahul Kumar</Text>
-                <Text className="text-[12px] text-gray-400 leading-tight">
-                  27 Dec, 11:34 PM - 31 Dec, 5:32 PM
-                </Text>
-              </View>
-            </View>
-            <View className="bg-white px-3 py-1.5 rounded-full flex-row items-center border border-gray-200 ml-2">
-              <Ionicons name="time-outline" size={14} color="#666" style={{ marginRight: 4 }} />
-              <Text className="text-[13px] font-medium text-gray-600">3d 17h</Text>
+            <View>
+              <Text style={styles.vehicleType}>Bike</Text>
+              <Text style={styles.vehicleSub}>Vehicle No: {activeSession.vehicle_number}</Text>
             </View>
           </View>
+          <TouchableOpacity style={styles.viewBtn}>
+            <Text style={styles.viewBtnText}>View</Text>
+          </TouchableOpacity>
+        </View>
 
-          {/* Session Overview Section */}
-          <Text className="text-[18px] font-bold text-gray-800 mb-4">Session Overview</Text>
-          
-          <View className="bg-white rounded-2xl p-1 shadow-sm border border-gray-100 mb-4">
-            <View className="flex-row gap-2 mb-2 p-3">
-              <TouchableOpacity 
-                className="flex-1 bg-[#E8F5E9] rounded-xl p-4 items-center justify-center"
-                onPress={() => onNavigate('handled-requests')}
-              >
-                <Text className="text-[24px] font-bold text-[#2E7D32] mb-1">1</Text>
-                <Text className="text-[14px] text-[#4CAF50] font-medium">Handled</Text>
-              </TouchableOpacity>
-              <View className="flex-1 bg-[#FFEBEE] rounded-xl p-4 items-center justify-center">
-                <Text className="text-[24px] font-bold text-[#c62828] mb-1">1</Text>
-                <Text className="text-[14px] text-[#ef5350] font-medium">Cancelled</Text>
-              </View>
-            </View>
-
-            <View className="bg-[#E6F4FB] rounded-xl p-5 mb-2 mx-3 flex-row justify-between items-center">
-              <Text className="text-[15px] font-bold text-gray-700">Quantity Purchased</Text>
-              <Text className="text-[15px] font-medium text-gray-800">
-                <Text className="font-bold">0</Text> kg, <Text className="font-bold">1</Text> pcs
-              </Text>
-            </View>
-
-            <View className="bg-[#E6F4FB] rounded-xl p-5 mx-3 mb-3 flex-row justify-between items-center">
-              <Text className="text-[15px] font-bold text-gray-700">Purchase Amount</Text>
-              <Text className="text-[16px] font-bold text-gray-900">₹ 2980</Text>
-            </View>
+        <Text style={styles.sectionTitle}>Past Members</Text>
+        <View style={styles.memberCard}>
+          <View style={styles.memberAvatar}>
+            <Text style={styles.memberInitial}>{vendorName.charAt(0).toUpperCase()}</Text>
           </View>
-
+          <View style={styles.memberInfo}>
+            <Text style={styles.memberName}>{vendorName}</Text>
+            <Text style={styles.memberRange}>
+              {formatSessionDate(activeSession.started_at)} - {formatSessionDate(activeSession.ended_at)}
+            </Text>
+          </View>
+          <View style={styles.durationPill}>
+            <Ionicons name="time-outline" size={14} color="#6B7280" />
+            <Text style={styles.durationText}>{activeSession.duration_display}</Text>
+          </View>
         </View>
       </ScrollView>
     </SafeAreaView>
   );
 };
+
+const styles = StyleSheet.create({
+  container: { flex: 1, backgroundColor: '#FFFFFF' },
+  header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: '#F1F5F9' },
+  backButton: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center', marginRight: 6 },
+  headerTitle: { fontSize: 40 / 2, fontWeight: '800', color: '#111827' },
+  scroll: { flex: 1, backgroundColor: '#F8F9FA' },
+  content: { paddingBottom: 30 },
+  mapWrap: { position: 'relative' },
+  livePill: {
+    position: 'absolute',
+    top: 12,
+    left: 12,
+    borderRadius: 999,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+  },
+  liveText: { fontSize: 12, fontWeight: '800', color: '#1F2937' },
+  statusCard: {
+    backgroundColor: '#EBEBEB',
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  statusTitle: { fontSize: 42 / 2, fontWeight: '800', color: '#1F2937' },
+  statusRange: { marginTop: 4, color: '#4B5563' },
+  durationPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    borderRadius: 999,
+    backgroundColor: '#FFFFFF',
+  },
+  durationText: { color: '#4B5563', fontWeight: '600' },
+  sectionTitle: { marginTop: 18, marginBottom: 10, marginHorizontal: 16, fontSize: 20, fontWeight: '800', color: '#1F2937' },
+  vehicleCard: {
+    marginHorizontal: 16,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    padding: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  vehicleLeft: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  vehicleIconWrap: {
+    width: 48,
+    height: 48,
+    borderRadius: 12,
+    backgroundColor: '#F8FAFC',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+  },
+  vehicleType: { fontSize: 16, fontWeight: '800', color: '#111827' },
+  vehicleSub: { marginTop: 2, color: '#6B7280' },
+  viewBtn: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: '#1B7332',
+  },
+  viewBtnText: { color: '#1B7332', fontWeight: '700' },
+  memberCard: {
+    marginHorizontal: 16,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    padding: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  memberAvatar: {
+    width: 54,
+    height: 54,
+    borderRadius: 27,
+    backgroundColor: '#E5E7EB',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
+  },
+  memberInitial: { color: '#4B5563', fontWeight: '700', fontSize: 18 },
+  memberInfo: { flex: 1 },
+  memberName: { fontSize: 35 / 2, fontWeight: '800', color: '#1F2937' },
+  memberRange: { marginTop: 2, color: '#6B7280', maxWidth: 210 },
+});
 
 export default DutySessionDetailsScreen;

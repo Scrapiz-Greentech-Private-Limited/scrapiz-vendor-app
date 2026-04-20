@@ -1,20 +1,75 @@
-import React from 'react';
-import { View, StyleSheet, Dimensions, Text } from 'react-native';
+import React, { useMemo } from 'react';
+import { StyleSheet, Text, View } from 'react-native';
 import Mapbox from '@rnmapbox/maps';
-import { MAP_CONFIG } from '../../config/mapConfig';
 import { MaterialIcons } from '@expo/vector-icons';
+import { MAP_CONFIG } from '../../config/mapConfig';
+import { ensureMapboxConfigured } from '../../config/mapbox';
+
+ensureMapboxConfigured();
+
+interface CoordinatePoint {
+  latitude: number | string | null | undefined;
+  longitude: number | string | null | undefined;
+}
 
 interface LiveSessionMapProps {
-  location?: { latitude: number; longitude: number };
+  vendorLocation?: CoordinatePoint | null;
+  customerLocation?: CoordinatePoint;
   height?: number;
+  location?: CoordinatePoint;
   label?: string;
 }
 
-const LiveSessionMap: React.FC<LiveSessionMapProps> = ({ 
-  location = { latitude: MAP_CONFIG.DEFAULT_CENTER[1], longitude: MAP_CONFIG.DEFAULT_CENTER[0] },
-  height = 220,
-  label = "LIVE SESSION TRACKING"
+const LiveSessionMap: React.FC<LiveSessionMapProps> = ({
+  vendorLocation,
+  customerLocation,
+  height = 250,
+  location,
+  label,
 }) => {
+  const defaultLocation = {
+    latitude: MAP_CONFIG.DEFAULT_CENTER[1],
+    longitude: MAP_CONFIG.DEFAULT_CENTER[0],
+  };
+
+  const toFiniteCoordinate = (value: number | string | null | undefined, fallback: number) => {
+    const parsed = typeof value === 'number' ? value : Number(value);
+    return Number.isFinite(parsed) ? parsed : fallback;
+  };
+
+  const normalizeCoordinate = (point: CoordinatePoint | null | undefined, fallback: { latitude: number; longitude: number }) => ({
+    latitude: toFiniteCoordinate(point?.latitude, fallback.latitude),
+    longitude: toFiniteCoordinate(point?.longitude, fallback.longitude),
+  });
+
+  const resolvedCustomerLocation = normalizeCoordinate(customerLocation || location, defaultLocation);
+  const fallbackVendorLocation = normalizeCoordinate(vendorLocation || location, resolvedCustomerLocation);
+
+  const routeGeoJson = useMemo(
+    () => ({
+      type: 'FeatureCollection',
+      features: [
+        {
+          type: 'Feature',
+          geometry: {
+            type: 'LineString',
+            coordinates: [
+              [fallbackVendorLocation.longitude, fallbackVendorLocation.latitude],
+              [resolvedCustomerLocation.longitude, resolvedCustomerLocation.latitude],
+            ],
+          },
+          properties: {},
+        },
+      ],
+    }),
+    [fallbackVendorLocation, resolvedCustomerLocation],
+  );
+
+  const centerCoordinate: [number, number] = [
+    (fallbackVendorLocation.longitude + resolvedCustomerLocation.longitude) / 2,
+    (fallbackVendorLocation.latitude + resolvedCustomerLocation.latitude) / 2,
+  ];
+
   return (
     <View style={[styles.wrapper, { height }]}>
       <Mapbox.MapView
@@ -22,38 +77,49 @@ const LiveSessionMap: React.FC<LiveSessionMapProps> = ({
         styleURL={MAP_CONFIG.DEFAULT_MAP_STYLE}
         logoEnabled={false}
         attributionEnabled={false}
-        zoomEnabled={true}
-        scrollEnabled={true}
+        rotateEnabled={false}
       >
-        <Mapbox.Camera
-          centerCoordinate={[location.longitude, location.latitude]}
-          zoomLevel={14}
-        />
-        
-        {/* Pulse effect for live location */}
+        <Mapbox.Camera centerCoordinate={centerCoordinate} zoomLevel={12.5} />
+
+        <Mapbox.ShapeSource id="vendor-customer-route" shape={routeGeoJson as any}>
+          <Mapbox.LineLayer
+            id="vendor-customer-route-line"
+            style={{
+              lineColor: '#0EA5E9',
+              lineWidth: 3,
+              lineDasharray: [2, 2],
+              lineOpacity: 0.8,
+            }}
+          />
+        </Mapbox.ShapeSource>
+
         <Mapbox.PointAnnotation
-          id="live-location"
-          coordinate={[location.longitude, location.latitude]}
+          id="customer-pin"
+          coordinate={[resolvedCustomerLocation.longitude, resolvedCustomerLocation.latitude]}
         >
-          <View style={styles.markerWrapper}>
-            <View style={styles.pulse} />
-            <View style={styles.markerCore}>
-                <MaterialIcons name="navigation" size={14} color="#fff" />
-            </View>
+          <View style={[styles.pin, styles.customerPin]}>
+            <MaterialIcons name="home" size={18} color="#FFFFFF" />
+          </View>
+        </Mapbox.PointAnnotation>
+
+        <Mapbox.PointAnnotation
+          id="vendor-pin"
+          coordinate={[fallbackVendorLocation.longitude, fallbackVendorLocation.latitude]}
+        >
+          <View style={[styles.pin, styles.vendorPin]}>
+            <MaterialIcons name="local-shipping" size={18} color="#FFFFFF" />
           </View>
         </Mapbox.PointAnnotation>
       </Mapbox.MapView>
 
-      {/* Overlay status */}
       <View style={styles.overlay}>
         <View style={styles.badge}>
-            <View style={styles.dot} />
-            <Text style={styles.badgeText}>{label}</Text>
+          <Text style={styles.badgeTitle}>Live Pickup Map</Text>
+          <Text style={styles.badgeSubtitle}>
+            {label || (vendorLocation ? 'Your live position is updating' : 'Waiting for your GPS position')}
+          </Text>
         </View>
       </View>
-
-      {/* Gradient Bottom Shadow */}
-      <View style={styles.bottomShadow} />
     </View>
   );
 };
@@ -61,80 +127,49 @@ const LiveSessionMap: React.FC<LiveSessionMapProps> = ({
 const styles = StyleSheet.create({
   wrapper: {
     width: '100%',
-    position: 'relative',
-    backgroundColor: '#1a1a1a',
+    overflow: 'hidden',
+    borderRadius: 24,
+    backgroundColor: '#DCE7E1',
   },
   map: {
     flex: 1,
   },
   overlay: {
     position: 'absolute',
-    top: 16,
-    left: 16,
-    zIndex: 10,
+    top: 14,
+    left: 14,
+    right: 14,
   },
   badge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(255, 255, 255, 0.95)',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 20,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
+    backgroundColor: 'rgba(255,255,255,0.92)',
+    borderRadius: 18,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
   },
-  dot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: '#4CAF50',
-    marginRight: 6,
-  },
-  badgeText: {
-    fontSize: 10,
+  badgeTitle: {
+    color: '#0F172A',
     fontWeight: '800',
-    color: '#333',
-    letterSpacing: 0.5,
   },
-  markerWrapper: {
+  badgeSubtitle: {
+    color: '#475569',
+    fontSize: 12,
+    marginTop: 2,
+  },
+  pin: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
     alignItems: 'center',
     justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: '#FFFFFF',
   },
-  markerCore: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-    backgroundColor: '#2196F3',
-    borderWidth: 3,
-    borderColor: '#fff',
-    alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.3,
-    shadowRadius: 4,
-    elevation: 5,
+  customerPin: {
+    backgroundColor: '#16A34A',
   },
-  pulse: {
-    position: 'absolute',
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: 'rgba(33, 150, 243, 0.3)',
-    borderWidth: 1,
-    borderColor: 'rgba(33, 150, 243, 0.5)',
+  vendorPin: {
+    backgroundColor: '#2563EB',
   },
-  bottomShadow: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    height: 40,
-    backgroundColor: 'rgba(0,0,0,0.05)',
-  }
 });
 
 export default LiveSessionMap;

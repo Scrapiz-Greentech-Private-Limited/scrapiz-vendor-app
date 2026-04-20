@@ -11,15 +11,18 @@ import {
 } from 'react-native';
 import DatePicker from 'react-native-modern-datepicker';
 import { bookingStateService, AcceptedBooking } from '../../services/bookingStateService';
+import { ActiveJob as ActiveJobType } from '../../types';
 
 import { useLanguage } from '../../utils/i18n';
 
 interface JobManagementScreenProps {
   onBack: () => void;
   onNavigate: (screen: string) => void;
+  activeBooking?: ActiveJobType | null;
+  onOpenActiveJob?: () => void;
 }
 
-const JobManagementScreen = ({ onBack, onNavigate }: JobManagementScreenProps) => {
+const JobManagementScreen = ({ onBack, onNavigate, activeBooking, onOpenActiveJob }: JobManagementScreenProps) => {
   const { t } = useLanguage();
   const [showCalendar, setShowCalendar] = useState(false);
   const [selectedDate, setSelectedDate] = useState(new Date().toDateString());
@@ -31,6 +34,8 @@ const JobManagementScreen = ({ onBack, onNavigate }: JobManagementScreenProps) =
   
   // Get accepted (upcoming) or in-progress bookings from service
   const [acceptedBookings, setAcceptedBookings] = useState<AcceptedBooking[]>([]);
+
+  const hasHydratedActiveBooking = Boolean(activeBooking && activeBooking.status !== 'completed');
 
   useEffect(() => {
     const loadBookings = () => {
@@ -81,7 +86,33 @@ const JobManagementScreen = ({ onBack, onNavigate }: JobManagementScreenProps) =
         showsVerticalScrollIndicator={false}
       >
         <Animated.View style={{ opacity: fadeAnim, transform: [{ translateY: slideAnim }] }}>
-          {acceptedBookings.length === 0 ? (
+          {hasHydratedActiveBooking && activeBooking ? (
+            <View className="mb-6 rounded-3xl border border-[#D5EBD9] bg-[#F2FBF4] p-5 shadow-sm">
+              <View className="mb-3 flex-row items-center justify-between">
+                <Text className="text-[18px] font-bold text-[#14532D]">Current ongoing job</Text>
+                <View className="rounded-full bg-[#DCFCE7] px-3 py-1">
+                  <Text className="text-[11px] font-bold uppercase text-[#166534]">Active</Text>
+                </View>
+              </View>
+
+              <Text className="text-[14px] font-semibold text-gray-800" numberOfLines={1}>
+                {activeBooking.scrapType || 'Mixed Scrap'}
+              </Text>
+              <Text className="mt-1 text-[13px] text-gray-600" numberOfLines={1}>
+                {activeBooking.address || 'Address shared in active booking screen'}
+              </Text>
+
+              <TouchableOpacity
+                className="mt-4 flex-row items-center justify-center rounded-2xl bg-[#1B7332] py-3"
+                onPress={onOpenActiveJob}
+              >
+                <MaterialIcons name="play-arrow" size={18} color="white" />
+                <Text className="ml-1 text-[14px] font-bold text-white">Resume ongoing order</Text>
+              </TouchableOpacity>
+            </View>
+          ) : null}
+
+          {acceptedBookings.length === 0 && !hasHydratedActiveBooking ? (
             /* Empty State - Matches Screenshot Exactly */
             <View className="items-center justify-center py-16">
               <View className="w-56 h-56 rounded-full bg-[#E8F1FC] justify-center items-center mb-8 relative">
@@ -122,7 +153,7 @@ const JobManagementScreen = ({ onBack, onNavigate }: JobManagementScreenProps) =
                     </Text>
                     <TouchableOpacity 
                       className="bg-[#1B7332] px-4 py-2 rounded-xl"
-                      onPress={() => onNavigate('JobDetails')}
+                      onPress={() => onNavigate('active-job')}
                     >
                       <Text className="text-white font-bold text-[12px]">{t('view_details')}</Text>
                     </TouchableOpacity>
