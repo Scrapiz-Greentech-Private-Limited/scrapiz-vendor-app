@@ -35,7 +35,10 @@ const JobManagementScreen = ({ onBack, onNavigate, activeBooking, onOpenActiveJo
   // Get accepted (upcoming) or in-progress bookings from service
   const [acceptedBookings, setAcceptedBookings] = useState<AcceptedBooking[]>([]);
 
-  const hasHydratedActiveBooking = Boolean(activeBooking && activeBooking.status !== 'completed');
+  const hasHydratedActiveBooking = Boolean(
+    activeBooking &&
+    ['on-the-way', 'arrived', 'in-progress'].includes(activeBooking.status)
+  );
 
   useEffect(() => {
     const loadBookings = () => {

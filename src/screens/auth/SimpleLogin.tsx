@@ -18,11 +18,13 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { ApiService } from '../../services/api';
+import { getReviewerSeedData, isVendorReviewMode } from '../../config/reviewMode';
 
 const { height } = Dimensions.get('window');
 const BRAND_GREEN = '#16a34a';
 const LOGO_FRAME_WIDTH = 240;
 const LOGO_FRAME_HEIGHT = 148;
+const FRONT_LOGO = require('../../../assets/images/frontLogo.png');
 
 interface SimpleLoginProps {
 	onNavigateSignup: () => void;
@@ -30,7 +32,9 @@ interface SimpleLoginProps {
 }
 
 export default function SimpleLogin({ onNavigateSignup, onNavigateOTP }: SimpleLoginProps) {
-	const [phone, setPhone] = useState('');
+	const reviewModeEnabled = isVendorReviewMode();
+	const reviewerSeed = getReviewerSeedData();
+	const [phone, setPhone] = useState(reviewModeEnabled ? reviewerSeed.phone : '');
 	const [error, setError] = useState('');
 	const [isLoading, setIsLoading] = useState(false);
 	const scrollViewRef = useRef<ScrollView>(null);
@@ -91,12 +95,7 @@ export default function SimpleLogin({ onNavigateSignup, onNavigateOTP }: SimpleL
 							<View style={styles.logoContainer}>
 								<View style={styles.logoFrame}>
 									<Image
-										source={require('../../../assets/images/vendorAppLogoFull.png')}
-										style={styles.logoBackdrop}
-										resizeMode="contain"
-									/>
-									<Image
-										source={require('../../../assets/images/vendorAppLogoFull.png')}
+										source={FRONT_LOGO}
 										style={styles.logo}
 										resizeMode="contain"
 									/>
@@ -109,6 +108,7 @@ export default function SimpleLogin({ onNavigateSignup, onNavigateOTP }: SimpleL
 								<Text style={styles.subheadline}>
 									Trusted by more than 1k families{'\n'}and industries in Mumbai
 								</Text>
+								{reviewModeEnabled ? <Text style={styles.reviewHint}>Reviewer number is prefilled for testing mode.</Text> : null}
 
 								{/* Phone Input */}
 								<View style={styles.phoneInputContainer}>
@@ -205,22 +205,17 @@ const styles = StyleSheet.create({
 	logoFrame: {
 		width: LOGO_FRAME_WIDTH,
 		height: LOGO_FRAME_HEIGHT,
-		position: 'relative',
+		alignItems: 'center',
+		justifyContent: 'center',
 	},
 	logo: {
 		width: LOGO_FRAME_WIDTH,
 		height: LOGO_FRAME_HEIGHT,
 	},
-	logoBackdrop: {
-		position: 'absolute',
-		width: LOGO_FRAME_WIDTH,
-		height: LOGO_FRAME_HEIGHT,
-		tintColor: '#ffffff',
-	},
 	contentSection: {
 		flex: 1,
 		paddingHorizontal: 24,
-		paddingTop: 84, // Keep headline below the logo backdrop
+		paddingTop: 84, // Keep headline below the logo artwork
 		alignItems: 'center',
 	},
 	headline: {
@@ -234,9 +229,16 @@ const styles = StyleSheet.create({
 		fontSize: 13,
 		color: '#6b7280',
 		marginTop: 8,
-		marginBottom: 24,
+		marginBottom: 12,
 		textAlign: 'center',
 		lineHeight: 18,
+	},
+	reviewHint: {
+		fontSize: 12,
+		color: '#15803d',
+		marginBottom: 12,
+		textAlign: 'center',
+		fontWeight: '600',
 	},
 	phoneInputContainer: {
 		flexDirection: 'row',

@@ -1,6 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import React, { useMemo, useState } from 'react';
+import { getReviewerSeedData, isVendorReviewMode } from '../../config/reviewMode';
 import {
   ActivityIndicator,
   Alert,
@@ -139,11 +140,13 @@ function UploadCard({
 }
 
 export default function KYCDocumentsScreen({ onBack, onComplete }: KYCDocumentsScreenProps) {
-  const [aadhaarNumber, setAadhaarNumber] = useState('');
+  const reviewModeEnabled = isVendorReviewMode();
+  const reviewerSeed = getReviewerSeedData();
+  const [aadhaarNumber, setAadhaarNumber] = useState(reviewModeEnabled ? reviewerSeed.aadhaarNumber : '');
   const [aadhaarFrontFile, setAadhaarFrontFile] = useState<UploadFile | undefined>();
   const [aadhaarBackFile, setAadhaarBackFile] = useState<UploadFile | undefined>();
-  const [secondaryType, setSecondaryType] = useState<SecondaryType>('pan');
-  const [secondaryNumber, setSecondaryNumber] = useState('');
+  const [secondaryType, setSecondaryType] = useState<SecondaryType>(reviewModeEnabled ? reviewerSeed.secondaryType : 'pan');
+  const [secondaryNumber, setSecondaryNumber] = useState(reviewModeEnabled ? reviewerSeed.secondaryNumber : '');
   const [secondaryFrontFile, setSecondaryFrontFile] = useState<UploadFile | undefined>();
   const [secondaryBackFile, setSecondaryBackFile] = useState<UploadFile | undefined>();
   const [previewUri, setPreviewUri] = useState<string | null>(null);
@@ -220,6 +223,29 @@ export default function KYCDocumentsScreen({ onBack, onComplete }: KYCDocumentsS
         secondaryNumber: secondaryNumber.trim().toUpperCase(),
         secondaryFrontFile,
         secondaryBackFile,
+      });
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleReviewSubmit = async () => {
+    setIsSubmitting(true);
+    try {
+      const reviewerFile: UploadFile = {
+        uri: reviewerSeed.profileImage,
+        name: 'review-document.jpg',
+        type: 'image/jpeg',
+      };
+
+      await onComplete({
+        aadhaarNumber: (aadhaarNumber || reviewerSeed.aadhaarNumber).trim().toUpperCase(),
+        aadhaarFrontFile: reviewerFile,
+        aadhaarBackFile: reviewerFile,
+        secondaryType,
+        secondaryNumber: (secondaryNumber || reviewerSeed.secondaryNumber).trim().toUpperCase(),
+        secondaryFrontFile: reviewerFile,
+        secondaryBackFile: reviewerFile,
       });
     } finally {
       setIsSubmitting(false);
@@ -365,6 +391,11 @@ export default function KYCDocumentsScreen({ onBack, onComplete }: KYCDocumentsS
             </>
           )}
         </TouchableOpacity>
+        {reviewModeEnabled ? (
+          <TouchableOpacity onPress={() => void handleReviewSubmit()} style={styles.reviewSubmitButton}>
+            <Text style={styles.reviewSubmitButtonText}>Use reviewer sample documents</Text>
+          </TouchableOpacity>
+        ) : null}
       </ScrollView>
 
       <Modal transparent visible={Boolean(previewUri)} animationType="fade" onRequestClose={() => setPreviewUri(null)}>
@@ -664,6 +695,21 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 17,
     fontWeight: '800',
+  },
+  reviewSubmitButton: {
+    marginTop: 14,
+    minHeight: 48,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#86efac',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#F0FDF4',
+  },
+  reviewSubmitButtonText: {
+    color: '#166534',
+    fontSize: 14,
+    fontWeight: '700',
   },
   modalOverlay: {
     flex: 1,

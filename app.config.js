@@ -13,6 +13,12 @@ export default {
     icon: "./assets/images/image_splashScreen_green.jpg",
     scheme: "scrapizvendorapp",
     userInterfaceStyle: "automatic",
+    updates: {
+      url: "https://u.expo.dev/84300c01-403e-46d0-bc86-af4fb17348e2",
+    },
+    runtimeVersion: {
+      policy: "appVersion",
+    },
     newArchEnabled: true,
     ios: {
       supportsTablet: true,
@@ -44,7 +50,7 @@ export default {
     },
     notification: {
       icon: "./assets/images/vendorApp_logo1.png",
-      color: "#16a34a"
+      color: "#16a34a",
     },
     plugins: [
       "expo-notifications",
@@ -91,7 +97,7 @@ export default {
         {
           accessToken:
             process.env.EXPO_PUBLIC_MAPBOX_API_KEY ||
-            "<MAPBOX_PUBLIC_TOKEN>",
+            "pk.eyJ1IjoiYXlhYW5hbWphZCIsImEiOiJjbWhxbW1veHcwdnB2MmpzNDA2emo1aWp3In0.Mc5kN89_lqGeagn5jWvvzA",
         },
       ],
       "expo-localization",
@@ -111,6 +117,8 @@ export default {
           process.env.EXPO_PUBLIC_API_BASE_URL || "https://api.scrapiz.in/api",
         EXPO_PUBLIC_VENDOR_FALLBACK_TESTING:
           process.env.EXPO_PUBLIC_VENDOR_FALLBACK_TESTING || "true",
+        EXPO_PUBLIC_VENDOR_REVIEW_MODE:
+          process.env.EXPO_PUBLIC_VENDOR_REVIEW_MODE || "live",
         EXPO_PUBLIC_FRONTEND_SECRET:
           process.env.EXPO_PUBLIC_FRONTEND_SECRET ||
           "ScrapizVendor#0nn$(tab!z",

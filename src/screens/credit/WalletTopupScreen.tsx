@@ -14,6 +14,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
 import { ApiService } from '../../services/api';
+import { isVendorReviewMode } from '../../config/reviewMode';
 
 interface WalletTopupScreenProps {
   onBack: () => void;
@@ -28,6 +29,7 @@ const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 const CONFETTI_COLORS = ['#ff5b14', '#22c55e', '#3b82f6', '#f59e0b', '#ec4899', '#8b5cf6'];
 
 export default function WalletTopupScreen({ onBack, onShowToast }: WalletTopupScreenProps) {
+  const reviewModeEnabled = isVendorReviewMode();
   const [selectedAmount, setSelectedAmount] = useState<number>(500);
   const [customAmount, setCustomAmount] = useState<string>('');
   const [submitting, setSubmitting] = useState(false);
@@ -111,6 +113,21 @@ export default function WalletTopupScreen({ onBack, onShowToast }: WalletTopupSc
     try {
       // Create Razorpay order
       const orderData = await ApiService.createWalletRazorpayOrder(amount);
+
+      if (reviewModeEnabled) {
+        const reviewPaymentId = `review-rzp-payment-${Date.now()}`;
+        const verifyResult = await ApiService.verifyWalletRazorpayPayment({
+          razorpay_order_id: orderData.razorpay_order_id,
+          razorpay_payment_id: reviewPaymentId,
+          razorpay_signature: 'review-signature',
+        });
+
+        setTransactionId(reviewPaymentId);
+        setCreditedAmount(verifyResult.credited);
+        setShowSuccess(true);
+        return;
+      }
+
       const RazorpayCheckout = (await import('react-native-razorpay')).default;
 
       const options = {
@@ -118,7 +135,7 @@ export default function WalletTopupScreen({ onBack, onShowToast }: WalletTopupSc
         image: 'https://scrapiz.in/logo.png',
         currency: orderData.currency,
         key: orderData.key_id,
-        amount: String(orderData.amount),
+        amount: Number(orderData.amount),
         order_id: orderData.razorpay_order_id,
         name: 'Scrapiz Vendor',
         prefill: {

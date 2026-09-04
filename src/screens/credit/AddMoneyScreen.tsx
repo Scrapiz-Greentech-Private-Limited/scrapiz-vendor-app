@@ -56,7 +56,7 @@ export default function AddMoneyScreen({ onBack, onShowToast }: AddMoneyScreenPr
 				image: 'https://scrapiz.in/logo.png',
 				currency: orderData.currency,
 				key: orderData.key_id,
-				amount: String(orderData.amount),
+				amount: Number(orderData.amount),
 				order_id: orderData.razorpay_order_id,
 				name: 'Scrapiz Vendor Wallet',
 				prefill: {

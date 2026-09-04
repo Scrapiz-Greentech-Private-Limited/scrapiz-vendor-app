@@ -1,17 +1,22 @@
 import React from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, ScrollView, Alert, Image, Platform } from 'react-native';
-import { MaterialIcons, Ionicons, FontAwesome5 } from '@expo/vector-icons';
+import { MaterialIcons, Ionicons } from '@expo/vector-icons';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '../../../hooks/useAuth';
 import { useLanguage } from '../../utils/i18n';
+import { useAppTheme } from '../../theme/appTheme';
 
 interface ProfileScreenProps {
   onBack: () => void;
   onNavigate: (screen: string) => void;
+  onShowToast?: (message: string, type: 'success' | 'error' | 'info') => void;
 }
 
 const ProfileScreen = ({ onBack, onNavigate }: ProfileScreenProps) => {
   const { user, logout } = useAuth();
   const { t, language, setLanguage } = useLanguage();
+  const { theme, setTheme } = useAppTheme();
+  const performanceRating = Number(user?.performanceRating ?? 5).toFixed(1);
 
   const handleLogout = () => {
     Alert.alert(
@@ -50,8 +55,12 @@ const ProfileScreen = ({ onBack, onNavigate }: ProfileScreenProps) => {
     setIsLanguageModalVisible(false);
   };
 
+  const handleThemeToggle = async () => {
+    await setTheme(theme === 'dark' ? 'light' : 'dark');
+  };
+
   return (
-    <View style={styles.container}>
+    <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
       <ScrollView style={styles.scrollView} bounces={false}>
         {/* Header Section */}
         <View style={styles.header}>
@@ -71,24 +80,32 @@ const ProfileScreen = ({ onBack, onNavigate }: ProfileScreenProps) => {
               </View>
             </View>
             <View style={styles.headerInfo}>
-              <Text style={styles.userName}>{user?.name || 'Nooroolhuda'}</Text>
-              <Text style={styles.userPhone}>{user?.phone || '+91 9967332092'}</Text>
+              <Text style={styles.userName}>{user?.name || 'Vendor'}</Text>
+              <Text style={styles.userPhone}>{user?.phone || 'Phone unavailable'}</Text>
+              {user?.serviceCity || user?.serviceArea ? (
+                <Text style={styles.userMeta}>
+                  {[user?.serviceArea, user?.serviceCity].filter(Boolean).join(', ')}
+                </Text>
+              ) : null}
             </View>
           </View>
         </View>
 
         <View style={styles.content}>
           {/* Ratings Card */}
-          <TouchableOpacity style={styles.ratingsCard} activeOpacity={0.8}>
+          <TouchableOpacity style={styles.ratingsCard} activeOpacity={0.8} onPress={() => onNavigate('ratings-hub')}>
             <View style={styles.ratingsContent}>
               <View style={styles.ratingsLeft}>
                 <View style={styles.starIconContainer}>
                   <MaterialIcons name="star-outline" size={24} color="#333" />
                 </View>
-                <Text style={styles.ratingsText}>{t('your_ratings')}</Text>
+                <View>
+                  <Text style={styles.ratingsText}>{t('your_ratings')}</Text>
+                  <Text style={styles.ratingsSubtext}>Explore all customer and vendor ratings here.</Text>
+                </View>
               </View>
               <View style={styles.ratingsRight}>
-                <Text style={styles.ratingsValue}>3.0 ★</Text>
+                <Text style={styles.ratingsValue}>{performanceRating}</Text>
                 <MaterialIcons name="chevron-right" size={24} color="#333" />
               </View>
             </View>
@@ -97,14 +114,24 @@ const ProfileScreen = ({ onBack, onNavigate }: ProfileScreenProps) => {
           {/* Account Settings Section */}
           <Text style={styles.sectionTitle}>{t('account_settings')}</Text>
           <View style={styles.optionsGroup}>
-            <TouchableOpacity style={styles.optionItem}>
+            <TouchableOpacity style={styles.optionItem} onPress={() => onNavigate('edit-profile')}>
               <View style={styles.optionLeft}>
-                <FontAwesome5 name="rupee-sign" size={18} color="#333" />
-                <Text style={styles.optionText}>{t('payment_acceptance_mode')}</Text>
+                <MaterialIcons name="edit" size={20} color="#333" />
+                <Text style={styles.optionText}>Edit profile</Text>
               </View>
               <MaterialIcons name="chevron-right" size={24} color="#ccc" />
             </TouchableOpacity>
-            
+
+            <View style={styles.divider} />
+
+            <TouchableOpacity style={styles.optionItem} onPress={() => onNavigate('personal-info')}>
+              <View style={styles.optionLeft}>
+                <Ionicons name="person-outline" size={20} color="#333" />
+                <Text style={styles.optionText}>Personal information</Text>
+              </View>
+              <MaterialIcons name="chevron-right" size={24} color="#ccc" />
+            </TouchableOpacity>
+
             <View style={styles.divider} />
             
             <TouchableOpacity style={styles.optionItem} onPress={() => setIsLanguageModalVisible(true)}>
@@ -136,6 +163,77 @@ const ProfileScreen = ({ onBack, onNavigate }: ProfileScreenProps) => {
               <View style={styles.optionLeft}>
                 <Ionicons name="help-circle-outline" size={22} color="#333" />
                 <Text style={styles.optionText}>{t('help_support_item')}</Text>
+              </View>
+              <MaterialIcons name="chevron-right" size={24} color="#ccc" />
+            </TouchableOpacity>
+          </View>
+
+          <Text style={styles.sectionTitle}>Workspace</Text>
+          <View style={styles.optionsGroup}>
+            <TouchableOpacity style={styles.optionItem} onPress={() => onNavigate('materials')}>
+              <View style={styles.optionLeft}>
+                <MaterialIcons name="storefront" size={20} color="#333" />
+                <Text style={styles.optionText}>Marketplace</Text>
+              </View>
+              <MaterialIcons name="chevron-right" size={24} color="#ccc" />
+            </TouchableOpacity>
+
+            <View style={styles.divider} />
+
+            <TouchableOpacity style={styles.optionItem} onPress={() => onNavigate('credit')}>
+              <View style={styles.optionLeft}>
+                <MaterialIcons name="account-balance-wallet" size={20} color="#333" />
+                <Text style={styles.optionText}>Wallet</Text>
+              </View>
+              <MaterialIcons name="chevron-right" size={24} color="#ccc" />
+            </TouchableOpacity>
+
+            <View style={styles.divider} />
+
+            <TouchableOpacity style={styles.optionItem} onPress={() => onNavigate('subscription')}>
+              <View style={styles.optionLeft}>
+                <MaterialIcons name="workspace-premium" size={20} color="#333" />
+                <Text style={styles.optionText}>Subscriptions</Text>
+              </View>
+              <MaterialIcons name="chevron-right" size={24} color="#ccc" />
+            </TouchableOpacity>
+
+            <View style={styles.divider} />
+
+            <TouchableOpacity style={styles.optionItem} onPress={() => onNavigate('history')}>
+              <View style={styles.optionLeft}>
+                <MaterialIcons name="history" size={20} color="#333" />
+                <Text style={styles.optionText}>Past completed orders</Text>
+              </View>
+              <MaterialIcons name="chevron-right" size={24} color="#ccc" />
+            </TouchableOpacity>
+
+            <View style={styles.divider} />
+
+            <TouchableOpacity style={styles.optionItem} onPress={() => onNavigate('contacts')}>
+              <View style={styles.optionLeft}>
+                <MaterialIcons name="contacts" size={20} color="#333" />
+                <Text style={styles.optionText}>Contacts</Text>
+              </View>
+              <MaterialIcons name="chevron-right" size={24} color="#ccc" />
+            </TouchableOpacity>
+
+            <View style={styles.divider} />
+
+            <TouchableOpacity style={styles.optionItem} onPress={() => onNavigate('message')}>
+              <View style={styles.optionLeft}>
+                <MaterialIcons name="support-agent" size={20} color="#333" />
+                <Text style={styles.optionText}>Customer support messages</Text>
+              </View>
+              <MaterialIcons name="chevron-right" size={24} color="#ccc" />
+            </TouchableOpacity>
+
+            <View style={styles.divider} />
+
+            <TouchableOpacity style={styles.optionItem} onPress={() => void handleThemeToggle()}>
+              <View style={styles.optionLeft}>
+                <MaterialIcons name={theme === 'dark' ? 'dark-mode' : 'light-mode'} size={20} color="#333" />
+                <Text style={styles.optionText}>{theme === 'dark' ? 'Dark mode' : 'Light mode'}</Text>
               </View>
               <MaterialIcons name="chevron-right" size={24} color="#ccc" />
             </TouchableOpacity>
@@ -226,7 +324,7 @@ const ProfileScreen = ({ onBack, onNavigate }: ProfileScreenProps) => {
           </View>
         </View>
       )}
-    </View>
+    </SafeAreaView>
   );
 };
 
@@ -287,6 +385,11 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: 'rgba(255,255,255,0.8)',
   },
+  userMeta: {
+    fontSize: 13,
+    color: 'rgba(255,255,255,0.72)',
+    marginTop: 6,
+  },
   content: {
     padding: 20,
     backgroundColor: '#fff',
@@ -323,6 +426,11 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: '600',
     color: '#333',
+  },
+  ratingsSubtext: {
+    marginTop: 4,
+    fontSize: 12,
+    color: '#6b7280',
   },
   ratingsRight: {
     flexDirection: 'row',

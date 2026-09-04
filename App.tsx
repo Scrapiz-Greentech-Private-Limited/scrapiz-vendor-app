@@ -1,11 +1,12 @@
 import { NavigationContainer } from '@react-navigation/native';
 import { PostHogProvider, usePostHog } from 'posthog-react-native';
-import React, { useEffect, useState } from 'react';
-import { Alert, StatusBar, StyleSheet, View } from 'react-native';
+import React, { useEffect, useMemo, useState } from 'react';
+import { Alert, StatusBar, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import * as Location from 'expo-location';
 import { AuthProvider, useAuth } from './hooks/useAuth';
 import { posthog } from './src/config/posthog';
+import { trackVendorNavigation } from './src/services/telemetry';
 import { LanguageProvider } from './src/utils/i18n';
 
 // Auth Screens
@@ -13,8 +14,11 @@ import { OTPVerify, Signup, SimpleLogin } from './src/screens/auth';
 // Main Screens
 import { BillsScreen, Dashboard, EarningsScreen, ManageScreen, PurchaseBillDetailScreen } from './src/screens/main';
 
+// Message Screens
+import { MessageScreen } from './src/screens/messages';
+
 // Profile Screens
-import { EditProfileScreen, PersonalInfoScreen, ProfileScreen } from './src/screens/profile';
+import { CustomerReviewFlowScreen, EditProfileScreen, PersonalInfoScreen, ProfileScreen, RatingsHubScreen } from './src/screens/profile';
 
 // Settings Screens
 import {
@@ -24,12 +28,11 @@ import {
     HelpSupportScreen,
     LanguageScreen,
     MaterialsScreen,
-    MoreMenuScreen,
     NotificationsScreen,
     PaymentSettingsScreen,
     PrivacyScreen,
     SelectMaterialScreen
-} from './src/screens/settings';
+  } from './src/screens/settings';
 
 // Job Screens
 import {
@@ -66,14 +69,17 @@ import {
 // Navigation & Common Components
 import * as Sentry from '@sentry/react-native';
 import { ErrorBoundary } from './src/components/common';
+import TestingModeBanner, { TESTING_MODE_BANNER_HEIGHT } from './src/components/common/TestingModeBanner';
 import { BottomNavigation } from './src/components/navigation';
-import { ApiHttpError, ApiService, VerifyOtpResponse } from './src/services/api';
+import { getReviewerSeedData, isVendorReviewMode } from './src/config/reviewMode';
+import { ApiHttpError, ApiService, VendorFaceReuploadRequestPayload, VendorPendingReviewBooking, VerifyOtpResponse } from './src/services/api';
 import {
     registerVendorPushToken,
     setupVendorNotificationChannels,
     setupVendorNotificationListeners,
 } from './src/services/notifications';
 import { vendorLocationStreamer } from './src/services/vendorLocationStreamer';
+import { vendorProfileSocketService } from './src/services/vendorProfileSocket';
 import { ActiveJob as ActiveJobType, BookingRequest, DutySession, LeadOrderItem, SelectedPickupItem } from './src/types';
 
 // Font loading imports
@@ -90,6 +96,7 @@ import * as SplashScreen from 'expo-splash-screen';
 
 // Import global styles for NativeWind
 import "./global.css";
+import { ThemeProvider } from './src/theme/appTheme';
 
 // Prevent splash screen from hiding automatically while fonts are loading
 SplashScreen.preventAutoHideAsync();
@@ -112,7 +119,23 @@ type CurrentBookingSnapshot = {
   }>;
 };
 
+type PendingFaceReuploadPrompt = {
+  title: string;
+  message: string;
+  requestedBy?: string | null;
+};
+
+type BookingStateSnapshot = {
+  id: string;
+  status: string;
+};
+
 const TERMINAL_BOOKING_STATUSES = new Set(['completed', 'cancelled', 'rejected']);
+const ACTIVE_JOB_STATUSES = new Set<ActiveJobType['status']>(['on-the-way', 'arrived', 'in-progress']);
+
+const isRenderableActiveJob = (job: ActiveJobType | null | undefined): job is ActiveJobType => {
+  return Boolean(job && ACTIVE_JOB_STATUSES.has(job.status));
+};
 
 const mapCurrentBookingStatusToActiveStatus = (status?: string): ActiveJobType['status'] => {
   const normalized = String(status || '').toLowerCase();
@@ -147,6 +170,18 @@ const toNumberOr = (value: unknown, fallback: number) => {
 };
 
 const QUOTE_SETTLEMENT_STATUSES = new Set(['submitted', 'awaiting_payment', 'paid']);
+
+const getBookingStateService = () => {
+  try {
+    return require('./src/services/bookingStateService').bookingStateService as {
+      getAcceptedBookings?: () => BookingStateSnapshot[];
+      subscribe?: (listener: () => void) => (() => void) | void;
+    } | undefined;
+  } catch (error) {
+    console.warn('Booking state service unavailable at runtime', error);
+    return undefined;
+  }
+};
 
 const mapCurrentBookingToActiveJob = (booking: CurrentBookingSnapshot): ActiveJobType => {
   const bookingId = String(booking.id);
@@ -211,6 +246,8 @@ Sentry.init({
 });
 
 const AppContent = () => {
+  const reviewModeEnabled = isVendorReviewMode();
+  const reviewerSeed = getReviewerSeedData();
   const {
     user,
     login,
@@ -239,6 +276,7 @@ const AppContent = () => {
   const [selectedBooking, setSelectedBooking] = useState<BookingRequest | null>(null);
   const [selectedRequestItem, setSelectedRequestItem] = useState<any>(null);
   const [selectedDutySession, setSelectedDutySession] = useState<DutySession | null>(null);
+  const [selectedReviewBooking, setSelectedReviewBooking] = useState<VendorPendingReviewBooking | null>(null);
   const [showJobCompletion, setShowJobCompletion] = useState(false);
   const [activeJob, setActiveJob] = useState<ActiveJobType | null>(null);
   const [priceCalculatorPayload, setPriceCalculatorPayload] = useState<{
@@ -265,14 +303,54 @@ const AppContent = () => {
   const [walletReceipt, setWalletReceipt] = useState<WalletPaymentReceipt | null>(null);
   const [showLocationPermissionGate, setShowLocationPermissionGate] = useState(false);
   const [isLocationGateChecking, setIsLocationGateChecking] = useState(false);
-  const hasInFlightActiveJob = Boolean(activeJob || priceCalculatorPayload || quoteSettlementPayload);
-  
-  // Job counts for navigation badges
-  const [jobCounts] = useState({
-    active: 2,
-    pending: 1,
-    upcoming: 3,
-  });
+  const [pendingFaceReuploadPrompt, setPendingFaceReuploadPrompt] = useState<PendingFaceReuploadPrompt | null>(null);
+  const [acceptedBookingsSnapshot, setAcceptedBookingsSnapshot] = useState<BookingStateSnapshot[]>([]);
+  const hasShownProfileImagePromptRef = React.useRef(false);
+  const hasInFlightActiveJob = Boolean(
+    isRenderableActiveJob(activeJob) || priceCalculatorPayload || quoteSettlementPayload
+  );
+
+  useEffect(() => {
+    const syncAcceptedBookings = () => {
+      const service = getBookingStateService();
+      const nextSnapshot = service?.getAcceptedBookings?.() || [];
+      setAcceptedBookingsSnapshot(nextSnapshot);
+    };
+
+    syncAcceptedBookings();
+    const unsubscribe = getBookingStateService()?.subscribe?.(syncAcceptedBookings);
+
+    return () => {
+      if (typeof unsubscribe === 'function') {
+        unsubscribe();
+      }
+    };
+  }, []);
+
+  const jobCounts = useMemo(() => {
+    let active = isRenderableActiveJob(activeJob) ? 1 : 0;
+    let upcoming = 0;
+
+    for (const booking of acceptedBookingsSnapshot) {
+      if (booking.status === 'completed' || booking.status === 'cancelled') {
+        continue;
+      }
+      if (activeJob && booking.id === String(activeJob.bookingId || activeJob.id)) {
+        continue;
+      }
+      if (booking.status === 'in-progress') {
+        active += 1;
+        continue;
+      }
+      upcoming += 1;
+    }
+
+    return {
+      active,
+      pending: 0,
+      upcoming,
+    };
+  }, [acceptedBookingsSnapshot, activeJob]);
 
   const showToast = (message: string, type: 'success' | 'error' | 'info') => {
     Alert.alert(
@@ -325,7 +403,7 @@ const AppContent = () => {
       return;
     }
 
-    if (activeJob) {
+    if (isRenderableActiveJob(activeJob)) {
       const activeBookingId = String(activeJob.bookingId || activeJob.id);
       void ApiService.getBookingActive(activeBookingId)
         .then((active) => {
@@ -342,18 +420,20 @@ const AppContent = () => {
           setActiveTab('active-job');
         })
         .catch(() => {
-          setActiveTab('active-job');
+          setActiveJob(null);
+          setActiveTab('manage');
         });
       return;
     }
 
-    setActiveTab('ongoing');
+    setActiveTab('manage');
   };
 
   const handleBackToHome = () => {
     setActiveTab('home');
     setSelectedBooking(null);
     setSelectedDutySession(null);
+    setSelectedReviewBooking(null);
     setShowJobCompletion(false);
     setPickupAssessmentPayload(null);
     setPriceCalculatorPayload(null);
@@ -367,24 +447,34 @@ const AppContent = () => {
   };
 
   const handleBackToOngoing = () => {
-    setActiveTab('ongoing');
+    setActiveTab('manage');
   };
 
   const handleBackToMore = () => {
-    setActiveTab('more-menu');
+    setActiveTab('profile');
   };
 
   const handleBackToProfile = () => {
+    setSelectedReviewBooking(null);
     setActiveTab('profile');
   };
 
   const handleNavigate = (screen: string, params?: any) => {
-    setActiveTab(screen);
+    const nextScreen = screen === 'more-menu' || screen === 'settings' ? 'profile' : screen;
+    trackVendorNavigation(screen, {
+      has_request: Boolean(params?.request),
+      has_session: Boolean(params?.session),
+      source_screen: activeTab,
+    });
+    setActiveTab(nextScreen);
     if (params?.request) {
       setSelectedRequestItem(params.request);
     }
     if (params?.session) {
       setSelectedDutySession(params.session);
+    }
+    if (params?.booking) {
+      setSelectedReviewBooking(params.booking);
     }
   };
 
@@ -397,6 +487,10 @@ const AppContent = () => {
   }, [user]);
 
   useEffect(() => {
+    if (reviewModeEnabled) {
+      return;
+    }
+
     void setupVendorNotificationChannels().catch((error) => {
       console.error('Failed to set up vendor notification channels:', error);
     });
@@ -409,7 +503,7 @@ const AppContent = () => {
   }, []);
 
   useEffect(() => {
-    if (!user) {
+    if (!user || reviewModeEnabled) {
       return;
     }
 
@@ -419,10 +513,65 @@ const AppContent = () => {
   }, [user]);
 
   useEffect(() => {
+    if (reviewModeEnabled || !user?.hasVendorProfile) {
+      vendorProfileSocketService.stop();
+      hasShownProfileImagePromptRef.current = false;
+      setPendingFaceReuploadPrompt(null);
+      return;
+    }
+
+    const unsubscribe = vendorProfileSocketService.subscribe((payload) => {
+      void refreshVendorProfile().catch(() => undefined);
+
+      if (payload.type === 'face_reupload_request') {
+        const requestPayload = payload as VendorFaceReuploadRequestPayload;
+        setPendingFaceReuploadPrompt({
+          title: requestPayload.title || 'Face Photo Update Needed',
+          message: requestPayload.message,
+          requestedBy: requestPayload.requested_by,
+        });
+        return;
+      }
+
+      if (!payload.requires_profile_image_upload) {
+        hasShownProfileImagePromptRef.current = false;
+        return;
+      }
+
+      if (onboardingStep !== 'none' || hasShownProfileImagePromptRef.current) {
+        return;
+      }
+
+      hasShownProfileImagePromptRef.current = true;
+      Alert.alert(
+        'Face photo required',
+        'A current face photo is required to keep your vendor profile active. Please capture it now.',
+        [
+          {
+            text: 'Later',
+            style: 'cancel',
+          },
+          {
+            text: 'Capture now',
+            onPress: () => setOnboardingStep('face'),
+          },
+        ],
+      );
+    });
+
+    void vendorProfileSocketService.start();
+
+    return () => {
+      unsubscribe();
+      vendorProfileSocketService.stop();
+    };
+  }, [onboardingStep, user?.hasVendorProfile]);
+
+  useEffect(() => {
     let isMounted = true;
 
     const evaluateLocationGate = async () => {
-      if (!user || onboardingStep !== 'none') {
+      if (!user || onboardingStep !== 'none' || reviewModeEnabled) {
         if (isMounted) {
           setShowLocationPermissionGate(false);
           setIsLocationGateChecking(false);
@@ -507,12 +656,20 @@ const AppContent = () => {
         const response = await ApiService.getCurrentBooking();
         const booking = response?.booking as CurrentBookingSnapshot | undefined;
 
-        if (!isMounted || !booking?.id) {
+        if (!isMounted) {
+          return;
+        }
+
+        if (!booking?.id) {
+          setActiveJob(null);
+          setPriceCalculatorPayload(null);
+          setQuoteSettlementPayload(null);
           return;
         }
 
         const normalizedStatus = String(booking.status || '').toLowerCase();
         if (TERMINAL_BOOKING_STATUSES.has(normalizedStatus)) {
+          setActiveJob(null);
           return;
         }
 
@@ -526,11 +683,12 @@ const AppContent = () => {
         });
 
         try {
-          const active = await ApiService.getBookingActive(hydratedJob.bookingId);
+          const bookingId = hydratedJob.bookingId || hydratedJob.id;
+          const active = await ApiService.getBookingActive(bookingId);
           const quoteStatus = String(active?.quote?.status || '').toLowerCase();
           if (QUOTE_SETTLEMENT_STATUSES.has(quoteStatus)) {
             setQuoteSettlementPayload({
-              bookingId: hydratedJob.bookingId,
+              bookingId,
               totalQuoted: Number(active?.quote?.total_amount || 0),
             });
             setPriceCalculatorPayload(null);
@@ -539,6 +697,13 @@ const AppContent = () => {
           // Best-effort hydration only.
         }
       } catch (error) {
+        if (isMounted) {
+          setActiveJob(null);
+        }
+        if (error instanceof ApiHttpError && (error.status === 401 || /token expired/i.test(error.message || ''))) {
+          logout().catch(() => undefined);
+          return;
+        }
         console.warn('Unable to hydrate current booking state', error);
       }
     };
@@ -621,11 +786,11 @@ const AppContent = () => {
     return (
       <PersonalDetailsScreen 
         initialValues={{
-          fullName: pendingPersonalDetails?.fullName || pendingSignupDraft.name || user?.name || '',
-          email: pendingPersonalDetails?.email || pendingSignupDraft.email || user?.email || '',
-          age: pendingPersonalDetails?.age || (user?.age ? String(user.age) : ''),
-          serviceCity: pendingPersonalDetails?.serviceCity || user?.serviceCity || '',
-          serviceArea: pendingPersonalDetails?.serviceArea || user?.serviceArea || '',
+          fullName: pendingPersonalDetails?.fullName || pendingSignupDraft.name || user?.name || (reviewModeEnabled ? reviewerSeed.name : ''),
+          email: pendingPersonalDetails?.email || pendingSignupDraft.email || user?.email || (reviewModeEnabled ? reviewerSeed.email : ''),
+          age: pendingPersonalDetails?.age || (user?.age ? String(user.age) : '') || (reviewModeEnabled ? reviewerSeed.age : ''),
+          serviceCity: pendingPersonalDetails?.serviceCity || user?.serviceCity || (reviewModeEnabled ? reviewerSeed.serviceCity : ''),
+          serviceArea: pendingPersonalDetails?.serviceArea || user?.serviceArea || (reviewModeEnabled ? reviewerSeed.serviceArea : ''),
         }}
         onNext={(data) => {
             setPendingPersonalDetails(data);
@@ -707,7 +872,18 @@ const AppContent = () => {
             setOnboardingStep('vehicle');
           }
         }}
-        onNext={() => {
+        onNext={async () => {
+          if (user?.hasVendorProfile && user.vendorStatus !== 'draft') {
+            try {
+              await refreshVendorProfile();
+            } catch {
+              // Keep the app usable even if refresh is temporarily unavailable.
+            }
+            setOnboardingStep('none');
+            showToast('Face photo updated successfully.', 'success');
+            return;
+          }
+
           setOnboardingStep('status');
         }}
       />
@@ -758,6 +934,16 @@ const AppContent = () => {
 
   // Guard: If user has vendor profile but status is 'draft', redirect to face capture
   if (user?.hasVendorProfile && user.vendorStatus === 'draft' && onboardingStep === 'none') {
+    setOnboardingStep('face');
+    return null;
+  }
+
+  if (
+    user?.hasVendorProfile &&
+    user.requiresProfileImageUpload &&
+    user.vendorStatus !== 'suspended' &&
+    onboardingStep === 'none'
+  ) {
     setOnboardingStep('face');
     return null;
   }
@@ -826,9 +1012,39 @@ const AppContent = () => {
       case 'manage':
         return <ManageScreen onBack={handleBackToHome} onNavigate={handleNavigate} />;
       case 'profile':
-        return <ProfileScreen onBack={handleBackToHome} onNavigate={handleNavigate} />;
+        return <ProfileScreen onBack={handleBackToHome} onNavigate={handleNavigate} onShowToast={showToast} />;
+      case 'message':
+        return <MessageScreen onBack={handleBackToHome} onNavigate={handleNavigate} onShowToast={showToast} />;
+      case 'edit-profile':
+        return <EditProfileScreen onBack={handleBackToProfile} onShowToast={showToast} />;
       case 'personal-info':
-        return <PersonalInfoScreen onBack={handleBackToProfile} />;
+        return <PersonalInfoScreen onBack={handleBackToProfile} onShowToast={showToast} />;
+      case 'ratings-hub':
+        return (
+          <RatingsHubScreen
+            onBack={handleBackToProfile}
+            onShowToast={showToast}
+            onStartCustomerReview={(booking) => handleNavigate('customer-review-flow', { booking })}
+          />
+        );
+      case 'customer-review-flow':
+        return selectedReviewBooking ? (
+          <CustomerReviewFlowScreen
+            booking={selectedReviewBooking}
+            onBack={() => setActiveTab('ratings-hub')}
+            onComplete={() => {
+              setSelectedReviewBooking(null);
+              setActiveTab('ratings-hub');
+            }}
+            onShowToast={showToast}
+          />
+        ) : (
+          <RatingsHubScreen
+            onBack={handleBackToProfile}
+            onShowToast={showToast}
+            onStartCustomerReview={(booking) => handleNavigate('customer-review-flow', { booking })}
+          />
+        );
 
       case 'payment-settings':
         return <PaymentSettingsScreen onBack={handleBackToProfile} />;
@@ -987,7 +1203,7 @@ const AppContent = () => {
           <QuoteSettlementScreen
             bookingId={quoteSettlementPayload.bookingId}
             initialAmount={quoteSettlementPayload.totalQuoted}
-            onBack={() => setActiveTab(activeJob ? 'active-job' : 'ongoing')}
+            onBack={() => setActiveTab(activeJob ? 'active-job' : 'manage')}
             onDone={({ bookingId, totalPayout }) => {
               posthogClient.capture('job_completed', {
                 job_id: bookingId,
@@ -1045,18 +1261,15 @@ const AppContent = () => {
             onBack={handleBackToProfile}
           />
         );
+      case 'settings':
       case 'more-menu':
-        return (
-          <MoreMenuScreen
-            onBack={handleBackToProfile}
-            onNavigate={handleNavigate}
-          />
-        );
+        return <ProfileScreen onBack={handleBackToHome} onNavigate={handleNavigate} onShowToast={showToast} />;
       case 'materials':
         return (
           <MaterialsScreen
             onBack={() => handleNavigate('more-menu')}
             onNavigate={handleNavigate}
+            onSelectProduct={() => handleNavigate('select-material')}
           />
         );
       case 'select-material':
@@ -1111,6 +1324,7 @@ const AppContent = () => {
           <SubscriptionScreen
             onBack={handleBackToMore}
             onNavigate={handleNavigate}
+            onShowToast={showToast}
           />
         );
       default:
@@ -1138,13 +1352,43 @@ const AppContent = () => {
       {renderContent()}
       
       {/* Show bottom navigation except on active job, completion, wallet payment flow, subscription, and materials screens */}
-      {activeTab !== 'active-job' && activeTab !== 'job-completion' && activeTab !== 'job-completed' && activeTab !== 'add-money' && activeTab !== 'payment-method' && activeTab !== 'payment-success' && activeTab !== 'subscription' && activeTab !== 'materials' && activeTab !== 'select-material' && activeTab !== 'booking-details' && activeTab !== 'pickup-assessment' && !showJobCompletion && (
+      {activeTab !== 'active-job' && activeTab !== 'job-completion' && activeTab !== 'job-completed' && activeTab !== 'add-money' && activeTab !== 'payment-method' && activeTab !== 'payment-success' && activeTab !== 'subscription' && activeTab !== 'materials' && activeTab !== 'select-material' && activeTab !== 'booking-details' && activeTab !== 'pickup-assessment' && activeTab !== 'edit-profile' && activeTab !== 'personal-info' && activeTab !== 'ratings-hub' && activeTab !== 'customer-review-flow' && !showJobCompletion && (
         <BottomNavigation
           activeTab={activeTab}
           onTabChange={setActiveTab}
           jobCounts={jobCounts}
         />
       )}
+
+      {pendingFaceReuploadPrompt && onboardingStep === 'none' ? (
+        <View style={styles.faceReuploadOverlay}>
+          <View style={styles.faceReuploadCard}>
+            <Text style={styles.faceReuploadEyebrow}>We are sorry</Text>
+            <Text style={styles.faceReuploadTitle}>{pendingFaceReuploadPrompt.title}</Text>
+            <Text style={styles.faceReuploadMessage}>{pendingFaceReuploadPrompt.message}</Text>
+            {pendingFaceReuploadPrompt.requestedBy ? (
+              <Text style={styles.faceReuploadMeta}>Requested by {pendingFaceReuploadPrompt.requestedBy}</Text>
+            ) : null}
+            <View style={styles.faceReuploadActions}>
+              <TouchableOpacity
+                onPress={() => setPendingFaceReuploadPrompt(null)}
+                style={styles.faceReuploadSecondaryButton}
+              >
+                <Text style={styles.faceReuploadSecondaryButtonText}>Later</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={() => {
+                  setPendingFaceReuploadPrompt(null);
+                  setOnboardingStep('face');
+                }}
+                style={styles.faceReuploadPrimaryButton}
+              >
+                <Text style={styles.faceReuploadPrimaryButtonText}>Upload now</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      ) : null}
     </View>
   );
 };
@@ -1153,6 +1397,85 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#fff',
+  },
+  faceReuploadOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(15, 23, 42, 0.48)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 20,
+  },
+  faceReuploadCard: {
+    width: '100%',
+    maxWidth: 420,
+    borderRadius: 28,
+    backgroundColor: '#fffaf5',
+    paddingHorizontal: 24,
+    paddingVertical: 26,
+    borderWidth: 1,
+    borderColor: '#fed7aa',
+    shadowColor: '#0f172a',
+    shadowOpacity: 0.18,
+    shadowRadius: 18,
+    shadowOffset: { width: 0, height: 10 },
+    elevation: 10,
+  },
+  faceReuploadEyebrow: {
+    fontSize: 13,
+    fontWeight: '700',
+    letterSpacing: 1,
+    textTransform: 'uppercase',
+    color: '#c2410c',
+  },
+  faceReuploadTitle: {
+    marginTop: 10,
+    fontSize: 28,
+    lineHeight: 34,
+    fontWeight: '800',
+    color: '#111827',
+  },
+  faceReuploadMessage: {
+    marginTop: 12,
+    fontSize: 16,
+    lineHeight: 24,
+    color: '#475569',
+  },
+  faceReuploadMeta: {
+    marginTop: 12,
+    fontSize: 13,
+    color: '#9a3412',
+    fontWeight: '600',
+  },
+  faceReuploadActions: {
+    marginTop: 22,
+    flexDirection: 'row',
+    gap: 12,
+  },
+  faceReuploadSecondaryButton: {
+    flex: 1,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#cbd5e1',
+    paddingVertical: 14,
+    alignItems: 'center',
+    backgroundColor: '#ffffff',
+  },
+  faceReuploadSecondaryButtonText: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#334155',
+  },
+  faceReuploadPrimaryButton: {
+    flex: 1,
+    borderRadius: 16,
+    paddingVertical: 14,
+    alignItems: 'center',
+    backgroundColor: '#ea580c',
+  },
+  faceReuploadPrimaryButtonText: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: '#ffffff',
   },
 });
 
@@ -1163,6 +1486,7 @@ export default Sentry.wrap(function App() {
     RobotoSlab_400Regular,
     RobotoSlab_700Bold,
   });
+  const reviewModeEnabled = isVendorReviewMode();
 
   useEffect(() => {
     if (fontsLoaded || fontError) {
@@ -1177,36 +1501,39 @@ export default Sentry.wrap(function App() {
   return (
     <SafeAreaProvider>
       <LanguageProvider>
-        <ErrorBoundary>
-          <PostHogProvider
-            client={posthog}
-            options={{
-              host: "https://us.i.posthog.com",
-              enableSessionReplay: true,
-              sessionReplayConfig: {
-                maskAllTextInputs: false,
-                maskAllImages: false,
-                captureLog: true,
-                captureNetworkTelemetry: true,
-                sampleRate: undefined,
-                throttleDelayMs: 1000,
-              }
-            }}
-            autocapture={{
-              captureScreens: false,
-              captureTouches: true,
-              propsToCapture: ['testID'],
-            }}
-          >
-            <AuthProvider>
-              <NavigationContainer>
-                <View className="flex-1 font-sans">
-                  <AppContent />
-                </View>
-              </NavigationContainer>
-            </AuthProvider>
-          </PostHogProvider>
-        </ErrorBoundary>
+        <ThemeProvider>
+          <ErrorBoundary>
+            <PostHogProvider
+              client={posthog}
+              options={{
+                host: "https://us.i.posthog.com",
+                enableSessionReplay: true,
+                sessionReplayConfig: {
+                  maskAllTextInputs: false,
+                  maskAllImages: false,
+                  captureLog: true,
+                  captureNetworkTelemetry: true,
+                  sampleRate: undefined,
+                  throttleDelayMs: 1000,
+                }
+              }}
+              autocapture={{
+                captureScreens: false,
+                captureTouches: true,
+                propsToCapture: ['testID'],
+              }}
+            >
+              <AuthProvider>
+                <NavigationContainer>
+                  <View className="flex-1" style={reviewModeEnabled ? { paddingTop: TESTING_MODE_BANNER_HEIGHT } : undefined}>
+                    <AppContent />
+                    {reviewModeEnabled ? <TestingModeBanner /> : null}
+                  </View>
+                </NavigationContainer>
+              </AuthProvider>
+            </PostHogProvider>
+          </ErrorBoundary>
+        </ThemeProvider>
       </LanguageProvider>
     </SafeAreaProvider>
   );

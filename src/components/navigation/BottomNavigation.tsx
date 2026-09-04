@@ -2,8 +2,7 @@ import React from 'react';
 import { View, TouchableOpacity, Text, StyleSheet, Platform } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-
-import { useLanguage } from '../../utils/i18n';
+import { useAppTheme } from '../../theme/appTheme';
 
 interface BottomNavigationProps {
   activeTab: string;
@@ -17,51 +16,58 @@ interface BottomNavigationProps {
 
 const BottomNavigation = ({ activeTab, onTabChange, jobCounts }: BottomNavigationProps) => {
   const insets = useSafeAreaInsets();
-  const { t } = useLanguage();
+  const { palette } = useAppTheme();
   
   // Simplified and more compact safe area calculation
   const compactBottomPadding = Platform.OS === 'android' 
     ? Math.max(insets.bottom + 4, 12) // Minimal padding for Android
     : Math.max(insets.bottom, 8); // iOS safe area
   
-  const tabs: Array<{ key: string; label: string; icon: string; badge?: number }> = [
-    { key: 'home', label: t('home'), icon: 'home' },
+  const tabs: { key: string; label: string; icon: string; badge?: number }[] = [
+    { key: 'home', label: 'Home', icon: 'home' },
     { 
-      key: 'ongoing', 
-      label: t('manage'), 
+      key: 'manage', 
+      label: 'Manage', 
       icon: 'work',
       badge: (jobCounts?.active || 0) + (jobCounts?.pending || 0) + (jobCounts?.upcoming || 0),
     },
-    { key: 'profile', label: t('profile'), icon: 'person' },
-    { key: 'more-menu', label: t('more_tabs'), icon: 'more-horiz' }
+    { key: 'message', label: 'Message', icon: 'message' },
+    { key: 'profile', label: 'Profile', icon: 'person' },
   ];
 
   return (
-    <View style={[
-      styles.container,
-      {
-        paddingBottom: compactBottomPadding,
-      }
-    ]}>
-      <View style={styles.tabContainer}>
+    <View style={styles.container} pointerEvents="box-none">
+      <View
+        style={[
+          styles.tabContainer,
+          {
+            marginBottom: compactBottomPadding,
+            backgroundColor: palette.surface,
+            borderColor: palette.border,
+          },
+        ]}
+      >
         {tabs.map((tab) => {
           const isActive = activeTab === tab.key;
-          
+
           return (
             <TouchableOpacity
               key={tab.key}
               onPress={() => onTabChange(tab.key)}
-              style={[
-                styles.tab,
-                isActive && styles.activeTab
-              ]}
-              activeOpacity={0.7}
+              style={[styles.tab, isActive && styles.activeTab]}
+              activeOpacity={0.75}
+              accessibilityLabel={tab.label}
             >
-              <View style={styles.iconContainer}>
-                <MaterialIcons 
-                  name={tab.icon as any} 
-                  size={22} 
-                  color={isActive ? '#1B7332' : '#6c757d'} 
+              <View
+                style={[
+                  styles.iconContainer,
+                  isActive && { backgroundColor: palette.primary, shadowColor: palette.primary },
+                ]}
+              >
+                <MaterialIcons
+                  name={tab.icon as any}
+                  size={22}
+                  color={isActive ? palette.primaryText : palette.textMuted}
                 />
                 {tab.badge && tab.badge > 0 && (
                   <View style={styles.badge}>
@@ -71,10 +77,13 @@ const BottomNavigation = ({ activeTab, onTabChange, jobCounts }: BottomNavigatio
                   </View>
                 )}
               </View>
-              <Text style={[
-                styles.label,
-                isActive && styles.activeLabel
-              ]}>
+              <Text
+                style={[
+                  styles.label,
+                  { color: isActive ? palette.primary : palette.textMuted },
+                  isActive && styles.activeLabel,
+                ]}
+              >
                 {tab.label}
               </Text>
             </TouchableOpacity>
@@ -88,56 +97,52 @@ const BottomNavigation = ({ activeTab, onTabChange, jobCounts }: BottomNavigatio
 const styles = StyleSheet.create({
   container: {
     position: 'absolute',
-    bottom: 0,
     left: 0,
     right: 0,
-    backgroundColor: 'white',
-    borderTopWidth: 1,
-    borderTopColor: '#e9ecef',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: -2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 8,
+    top: 0,
+    bottom: 0,
+    justifyContent: 'flex-end',
+    alignItems: 'center',
     zIndex: 1000,
   },
   
   tabContainer: {
     flexDirection: 'row',
-    paddingHorizontal: 4,
-    paddingTop: 8,
-    paddingBottom: 4,
-    minHeight: 56, // Compact height while maintaining accessibility
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 28,
+    borderWidth: 1,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.12,
+    shadowRadius: 20,
+    elevation: 8,
   },
   
   tab: {
-    flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 6,
-    paddingHorizontal: 2,
-    borderRadius: 8,
-    minHeight: 44, // Compact but still accessible
+    paddingHorizontal: 8,
+    minWidth: 54,
   },
   
   activeTab: {
-    backgroundColor: 'rgba(27, 115, 50, 0.1)',
     transform: [{ scale: 1.02 }],
   },
   
   iconContainer: {
     position: 'relative',
-    marginBottom: 3,
     alignItems: 'center',
     justifyContent: 'center',
-    width: 24,
-    height: 24,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
   },
-  
   badge: {
     position: 'absolute',
-    top: -4,
-    right: -4,
+    top: -6,
+    right: -6,
     backgroundColor: '#dc3545',
     borderRadius: 8,
     minWidth: 16,
@@ -162,18 +167,13 @@ const styles = StyleSheet.create({
   },
   
   label: {
-    fontSize: 10,
+    fontSize: 9,
     fontWeight: '600',
-    color: '#6c757d',
-    textAlign: 'center',
-    lineHeight: 12,
-    includeFontPadding: false,
-    textAlignVertical: 'center',
+    marginTop: 3,
   },
   
   activeLabel: {
-    color: '#1B7332',
-    fontWeight: 'bold',
+    fontWeight: '700',
   },
 });
 

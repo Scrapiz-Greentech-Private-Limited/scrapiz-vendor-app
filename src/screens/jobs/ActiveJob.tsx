@@ -2,17 +2,18 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Linking,
-  Modal,
   ScrollView,
   StyleSheet,
   Text,
-  TextInput,
   TouchableOpacity,
   View,
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { Ionicons, MaterialIcons } from '@expo/vector-icons';
+import ArrivalVerifyScreen from '../booking/ArrivalVerifyScreen';
 import LiveSessionMap from '../../components/jobs/LiveSessionMap';
+import LiveTrackingGate from '../../components/jobs/LiveTrackingGate';
+import ArrivalOtpBottomSheet from '../../components/jobs/ArrivalOtpBottomSheet';
 import { ApiService } from '../../services/api';
 import { vendorLocationStreamer } from '../../services/vendorLocationStreamer';
 import { MAP_CONFIG } from '../../config/mapConfig';
@@ -66,6 +67,21 @@ const STEP_META: Record<
   },
 };
 
+const MAX_TRUSTED_VENDOR_ACCURACY_METERS = 500;
+const MAX_VENDOR_LOCATION_AGE_MS = 2 * 60 * 1000;
+
+const isCoordinateUsable = (latitude: number, longitude: number) => {
+  if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
+    return false;
+  }
+
+  if (Math.abs(latitude) > 90 || Math.abs(longitude) > 180) {
+    return false;
+  }
+
+  return !(Math.abs(latitude) < 0.0001 && Math.abs(longitude) < 0.0001);
+};
+
 const normalizeStep = (step: BookingActiveResponse['step']): StepKey => {
   if (typeof step === 'string') {
     if (step === 'en_route' || step === 'arrived' || step === 'in_progress' || step === 'ready') {
@@ -99,11 +115,13 @@ const ActiveJob: React.FC<ActiveJobProps> = ({
   );
   const [isLoading, setIsLoading] = useState(true);
   const [isActionLoading, setIsActionLoading] = useState(false);
-  const [arrivalModalVisible, setArrivalModalVisible] = useState(false);
+  const [trackingGateDismissed, setTrackingGateDismissed] = useState(false);
+  const [arrivalSheetVisible, setArrivalSheetVisible] = useState(false);
   const [selfieUploading, setSelfieUploading] = useState(false);
   const [selfieRemoteUrl, setSelfieRemoteUrl] = useState('');
   const [otpSent, setOtpSent] = useState(false);
   const [otpCode, setOtpCode] = useState('');
+  const [showArrivalVerify, setShowArrivalVerify] = useState(false);
 
   const loadActive = useCallback(async () => {
     try {
@@ -138,6 +156,7 @@ const ActiveJob: React.FC<ActiveJobProps> = ({
 
   const stepKey = useMemo<StepKey>(() => normalizeStep(activeData?.step ?? 1), [activeData?.step]);
   const stepMeta = STEP_META[stepKey];
+  const shouldShowTrackingGate = stepKey === 'en_route' && !trackingGateDismissed;
 
   const customerName = useMemo(() => {
     const rawName = activeData?.customer?.name;
@@ -211,6 +230,59 @@ const ActiveJob: React.FC<ActiveJobProps> = ({
     };
   }, [activeData]);
 
+  const liveDistanceMeters = useMemo(() => {
+    if (!vendorCoords || !pickupCoordinates.hasValidPickupCoordinates) {
+      return null;
+    }
+
+    const fromLat = Number(vendorCoords.latitude);
+    const fromLng = Number(vendorCoords.longitude);
+    const toLat = pickupCoordinates.latitude;
+    const toLng = pickupCoordinates.longitude;
+
+    if (![fromLat, fromLng, toLat, toLng].every((value) => Number.isFinite(value))) {
+      return null;
+    }
+
+    if (!isCoordinateUsable(fromLat, fromLng) || !isCoordinateUsable(toLat, toLng)) {
+      return null;
+    }
+
+    const vendorAccuracy = Number(vendorCoords.accuracy);
+    if (Number.isFinite(vendorAccuracy) && vendorAccuracy > MAX_TRUSTED_VENDOR_ACCURACY_METERS) {
+      return null;
+    }
+
+    const vendorTimestamp = Number(vendorCoords.timestamp);
+    if (Number.isFinite(vendorTimestamp) && Date.now() - vendorTimestamp > MAX_VENDOR_LOCATION_AGE_MS) {
+      return null;
+    }
+
+    const toRadians = (value: number) => (value * Math.PI) / 180;
+    const earthRadiusMeters = 6371000;
+    const deltaLat = toRadians(toLat - fromLat);
+    const deltaLng = toRadians(toLng - fromLng);
+    const lat1 = toRadians(fromLat);
+    const lat2 = toRadians(toLat);
+
+    const a =
+      Math.sin(deltaLat / 2) * Math.sin(deltaLat / 2) +
+      Math.cos(lat1) * Math.cos(lat2) * Math.sin(deltaLng / 2) * Math.sin(deltaLng / 2);
+    return earthRadiusMeters * (2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)));
+  }, [pickupCoordinates, vendorCoords]);
+
+  useEffect(() => {
+    if (stepKey !== 'en_route') {
+      setTrackingGateDismissed(false);
+    }
+  }, [stepKey]);
+
+  useEffect(() => {
+    if (stepKey === 'en_route' && liveDistanceMeters !== null && liveDistanceMeters <= 300) {
+      setShowArrivalVerify(true);
+    }
+  }, [liveDistanceMeters, stepKey]);
+
   const handleCall = () => {
     if (!activeData?.customer?.phone || activeData.customer.phone_masked) {
       onShowToast('Customer phone is locked until arrival OTP verification.', 'info');
@@ -220,7 +292,7 @@ const ActiveJob: React.FC<ActiveJobProps> = ({
   };
 
   const resetArrivalModal = () => {
-    setArrivalModalVisible(false);
+    setArrivalSheetVisible(false);
     setSelfieUploading(false);
     setSelfieRemoteUrl('');
     setOtpSent(false);
@@ -343,7 +415,7 @@ const ActiveJob: React.FC<ActiveJobProps> = ({
     }
 
     if (stepKey === 'en_route') {
-      setArrivalModalVisible(true);
+      setArrivalSheetVisible(true);
       return;
     }
 
@@ -378,8 +450,45 @@ const ActiveJob: React.FC<ActiveJobProps> = ({
     );
   }
 
+  if (showArrivalVerify) {
+    return (
+      <ArrivalVerifyScreen
+        orderId={bookingId}
+        bookingContext={{
+          bookingId,
+          selectedItems: mergedSelectedItems,
+        }}
+        onBack={() => setShowArrivalVerify(false)}
+        onVerified={async () => {
+          setShowArrivalVerify(false);
+          try {
+            await ApiService.markBookingArrived(bookingId);
+            await loadActive();
+            onShowToast('Arrival verified successfully.', 'success');
+          } catch {
+            onShowToast('Arrival was verified, but booking status could not be updated.', 'error');
+          }
+        }}
+      />
+    );
+  }
+
   return (
     <View style={styles.container}>
+      <LiveTrackingGate
+        visible={shouldShowTrackingGate}
+        vendorCoords={vendorCoords}
+        pickupLocation={{
+          latitude: pickupCoordinates.latitude,
+          longitude: pickupCoordinates.longitude,
+        }}
+        expectedDistanceKm={activeData.distance_km}
+        customerName={customerName}
+        pickupAddress={activeData.pickup_address}
+        onContinue={() => setTrackingGateDismissed(true)}
+        onBack={onBack}
+      />
+
       <View style={styles.header}>
         <TouchableOpacity onPress={onBack} style={styles.headerBtn}>
           <Ionicons name="arrow-back" size={22} color="#fff" />
@@ -395,6 +504,15 @@ const ActiveJob: React.FC<ActiveJobProps> = ({
 
       <ScrollView contentContainerStyle={styles.content}>
         <View style={styles.statusCard}>
+          {liveDistanceMeters !== null ? (
+            <View style={styles.liveDistanceBanner}>
+              <MaterialIcons name="gps-fixed" size={16} color="#22C55E" />
+              <Text style={styles.liveDistanceText}>
+                Live distance: {Math.round(liveDistanceMeters)} m from the customer pin
+              </Text>
+            </View>
+          ) : null}
+
           <View style={styles.statusRow}>
             <View style={styles.statusIconWrap}>
               <MaterialIcons name={stepMeta.icon} size={30} color="#14532D" />
@@ -475,58 +593,19 @@ const ActiveJob: React.FC<ActiveJobProps> = ({
         </TouchableOpacity>
       </View>
 
-      <Modal visible={arrivalModalVisible} transparent animationType="slide" onRequestClose={resetArrivalModal}>
-        <View style={styles.modalBackdrop}>
-          <View style={styles.modalCard}>
-            <Text style={styles.modalTitle}>Arrival Verification</Text>
-            <Text style={styles.modalSub}>Capture a selfie, send OTP, then verify customer OTP to unlock phone.</Text>
-
-            <TouchableOpacity
-              style={[styles.modalPrimaryBtn, selfieUploading && styles.disabled]}
-              onPress={() => void captureAndUploadSelfie()}
-              disabled={selfieUploading}
-            >
-              {selfieUploading ? <ActivityIndicator color="#fff" /> : <Text style={styles.modalPrimaryText}>Capture & Upload Selfie</Text>}
-            </TouchableOpacity>
-
-            {selfieRemoteUrl ? (
-              <Text style={styles.modalStatusText}>Selfie uploaded. Ready to send OTP.</Text>
-            ) : null}
-
-            <TouchableOpacity
-              style={[styles.modalSecondaryBtn, (!selfieRemoteUrl || isActionLoading) && styles.disabled]}
-              onPress={() => void sendArrivalOtp()}
-              disabled={!selfieRemoteUrl || isActionLoading}
-            >
-              <Text style={styles.modalSecondaryText}>Send Arrival OTP</Text>
-            </TouchableOpacity>
-
-            {otpSent ? (
-              <>
-                <TextInput
-                  value={otpCode}
-                  onChangeText={setOtpCode}
-                  keyboardType="number-pad"
-                  maxLength={6}
-                  placeholder="Enter 6-digit OTP"
-                  style={styles.otpInput}
-                />
-                <TouchableOpacity
-                  style={[styles.modalPrimaryBtn, isActionLoading && styles.disabled]}
-                  onPress={() => void verifyArrivalOtp()}
-                  disabled={isActionLoading}
-                >
-                  {isActionLoading ? <ActivityIndicator color="#fff" /> : <Text style={styles.modalPrimaryText}>Verify OTP & Arrive</Text>}
-                </TouchableOpacity>
-              </>
-            ) : null}
-
-            <TouchableOpacity style={styles.modalCloseBtn} onPress={resetArrivalModal}>
-              <Text style={styles.modalCloseText}>Close</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </Modal>
+      <ArrivalOtpBottomSheet
+        visible={arrivalSheetVisible}
+        selfieUploading={selfieUploading}
+        selfieRemoteUrl={selfieRemoteUrl}
+        otpSent={otpSent}
+        otpCode={otpCode}
+        isActionLoading={isActionLoading}
+        onClose={resetArrivalModal}
+        onCaptureSelfie={() => void captureAndUploadSelfie()}
+        onSendOtp={() => void sendArrivalOtp()}
+        onVerifyOtp={() => void verifyArrivalOtp()}
+        onChangeOtp={setOtpCode}
+      />
     </View>
   );
 };
@@ -563,6 +642,24 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255,255,255,0.18)',
   },
   content: { padding: 16, paddingBottom: 140, gap: 16 },
+  liveDistanceBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: '#ECFDF5',
+    borderWidth: 1,
+    borderColor: '#BBF7D0',
+    borderRadius: 16,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    marginBottom: 14,
+  },
+  liveDistanceText: {
+    flex: 1,
+    color: '#14532D',
+    fontSize: 12,
+    fontWeight: '700',
+  },
   statusCard: { backgroundColor: '#fff', borderRadius: 24, padding: 18 },
   statusRow: { flexDirection: 'row', alignItems: 'center', gap: 14 },
   statusIconWrap: {
@@ -643,73 +740,18 @@ const styles = StyleSheet.create({
     marginTop: 4,
     fontSize: 12,
   },
-  modalBackdrop: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.45)',
-    justifyContent: 'flex-end',
-  },
-  modalCard: {
-    backgroundColor: '#fff',
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    padding: 18,
-    gap: 10,
-  },
-  modalTitle: {
-    fontSize: 20,
-    fontWeight: '800',
-    color: '#0F172A',
-  },
-  modalSub: {
-    color: '#64748B',
-    lineHeight: 20,
-  },
-  modalPrimaryBtn: {
-    height: 46,
-    borderRadius: 12,
-    backgroundColor: '#14532D',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  modalPrimaryText: {
-    color: '#fff',
-    fontWeight: '800',
-  },
-  modalSecondaryBtn: {
-    height: 44,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#14532D',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  modalSecondaryText: {
-    color: '#14532D',
-    fontWeight: '800',
-  },
-  modalStatusText: {
-    color: '#166534',
-    fontWeight: '600',
-    fontSize: 12,
-  },
-  otpInput: {
-    height: 46,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#CBD5E1',
-    paddingHorizontal: 12,
-    fontSize: 16,
-    letterSpacing: 2,
-    color: '#0F172A',
-  },
-  modalCloseBtn: {
-    alignItems: 'center',
-    paddingVertical: 8,
-  },
-  modalCloseText: {
-    color: '#64748B',
-    fontWeight: '700',
-  },
+  modalBackdrop: { flex: 1 },
+  modalCard: { display: 'none' },
+  modalTitle: { display: 'none' },
+  modalSub: { display: 'none' },
+  modalPrimaryBtn: { display: 'none' },
+  modalPrimaryText: { display: 'none' },
+  modalSecondaryBtn: { display: 'none' },
+  modalSecondaryText: { display: 'none' },
+  modalStatusText: { display: 'none' },
+  otpInput: { display: 'none' },
+  modalCloseBtn: { display: 'none' },
+  modalCloseText: { display: 'none' },
 });
 
 export default ActiveJob;

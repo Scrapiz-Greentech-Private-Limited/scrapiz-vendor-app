@@ -8,6 +8,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { ApiService } from '../../services/api';
+import { getReviewerSeedData, isVendorReviewMode } from '../../config/reviewMode';
 
 const { height } = Dimensions.get('window');
 
@@ -18,9 +19,11 @@ interface SignupProps {
 }
 
 export default function SignupScreen({ onNavigateLogin, onNavigateOTP, onBack }: SignupProps) {
-  const [name, setName] = useState('');
-  const [businessName, setBusinessName] = useState('');
-  const [phone, setPhone] = useState('');
+  const reviewModeEnabled = isVendorReviewMode();
+  const reviewerSeed = getReviewerSeedData();
+  const [name, setName] = useState(reviewModeEnabled ? reviewerSeed.name : '');
+  const [businessName, setBusinessName] = useState(reviewModeEnabled ? reviewerSeed.businessName : '');
+  const [phone, setPhone] = useState(reviewModeEnabled ? reviewerSeed.phone : '');
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
 
@@ -66,6 +69,7 @@ export default function SignupScreen({ onNavigateLogin, onNavigateOTP, onBack }:
             <View className="flex-1 bg-white rounded-t-[40px] px-6">
               <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingTop: 30, paddingBottom: 50 }}>
                 <Text className="text-3xl font-extrabold text-slate-900 mb-8">Create Partner Account</Text>
+                {reviewModeEnabled ? <Text className="text-green-700 font-semibold mb-4">Testing mode has prefilled reviewer details.</Text> : null}
 
                 <View className="mb-4">
                   <Text className="text-lg font-semibold text-slate-500 mb-1 ml-1">Full Name</Text>

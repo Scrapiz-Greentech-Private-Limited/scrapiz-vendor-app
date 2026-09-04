@@ -73,9 +73,13 @@
         "RNMapboxMapsDownloadToken": "${MAPBOX_DOWNLOADS_TOKEN}"
       }],
       ["./plugins/withMapboxAccessToken", {
-        "accessToken": "${EXPO_PUBLIC_MAPBOX_API_KEY}"
+        "accessToken":
+            "process.env.EXPO_PUBLIC_MAPBOX_API_KEY || pk.eyJ1IjoiYXlhYW5hbWphZCIsImEiOiJjbWhxbW1veHcwdnB2MmpzNDA2emo1aWp3In0.Mc5kN89_lqGeagn5jWvvzA"
+            
       }],
-      "expo-localization"
+      
+      "expo-localization" 
+
     ],
     "experiments": {
       "reactCompiler": true
@@ -87,6 +91,7 @@
         "EXPO_PUBLIC_API_BASE_URL": "https://api.scrapiz.in/api",
         "EXPO_PUBLIC_ENABLE_VENDOR_FALLBACK_BOOKINGS": "false",
         "EXPO_PUBLIC_VENDOR_FALLBACK_TESTING": "false",
+        "EXPO_PUBLIC_VENDOR_REVIEW_MODE": "live",
         "EXPO_PUBLIC_FRONTEND_SECRET": "ScrapizVendor#0nn$(tab!z",
         "EXPO_PUBLIC_VENDOR_FRONTEND_SECRET": "ScrapizVendor#0nn$(tab!z"
         

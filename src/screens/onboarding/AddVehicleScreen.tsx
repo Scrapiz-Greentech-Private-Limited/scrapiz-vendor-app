@@ -11,6 +11,7 @@ import {
   View,
   KeyboardAvoidingView,
 } from "react-native";
+import { getReviewerSeedData, isVendorReviewMode } from "../../config/reviewMode";
 
 interface AddVehicleScreenProps {
   onComplete: (data: any) => void;
@@ -34,11 +35,15 @@ export default function AddVehicleScreen({
   onComplete,
   onBack,
 }: AddVehicleScreenProps) {
-  const [selectedType, setSelectedType] = useState("thela");
-  const [vehicleNumber, setVehicleNumber] = useState("");
-  const [vehicleName, setVehicleName] = useState("");
-  const [vehicleModelName, setVehicleModelName] = useState("");
-  const [weightEquipment, setWeightEquipment] = useState("Digital Machine");
+  const reviewModeEnabled = isVendorReviewMode();
+  const reviewerSeed = getReviewerSeedData();
+  const [selectedType, setSelectedType] = useState(reviewModeEnabled ? reviewerSeed.vehicleType : "thela");
+  const [vehicleNumber, setVehicleNumber] = useState(reviewModeEnabled ? reviewerSeed.vehicleNumber : "");
+  const [vehicleName, setVehicleName] = useState(reviewModeEnabled ? reviewerSeed.vehicleName : "");
+  const [vehicleModelName, setVehicleModelName] = useState(reviewModeEnabled ? reviewerSeed.vehicleModelName : "");
+  const [weightEquipment, setWeightEquipment] = useState(
+    reviewModeEnabled && reviewerSeed.weighingScaleType === 'tarazu' ? "Tarazu" : "Digital Machine"
+  );
   const [showSuccess, setShowSuccess] = useState(false);
   const requiresVehicleNumber = VEHICLE_NUMBER_REQUIRED_TYPES.includes(selectedType);
   const requiresVehicleMeta = VEHICLE_META_REQUIRED_TYPES.includes(selectedType);
@@ -186,7 +191,16 @@ const Header = (
           numColumns={3}
           keyboardShouldPersistTaps="handled"
           contentContainerStyle={{ padding: 16 }}
-          ListHeaderComponent={Header} // Pass the variable
+          ListHeaderComponent={
+            <View>
+              {Header}
+              {reviewModeEnabled ? (
+                <Text className="text-sm font-semibold text-green-700 mb-2">
+                  Testing mode has filled the vehicle details for reviewer flow.
+                </Text>
+              ) : null}
+            </View>
+          }
           ListFooterComponent={Footer} // Pass the variable
         />
           {/* Success Modal */}

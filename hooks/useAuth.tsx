@@ -1,8 +1,10 @@
 import { useState, createContext, useContext, ReactNode, useEffect } from 'react';
 import { usePostHog } from 'posthog-react-native';
+import { isVendorReviewMode } from '../src/config/reviewMode';
 import { ApiService, ApiHttpError, VerifyOtpResponse, VendorProfile } from '../src/services/api';
 import { User } from '../src/types';
 import { AuthStorageService } from '../src/services/authStorage';
+import { ReviewModeStateService } from '../src/services/reviewModeState';
 
 interface AuthContextType {
   user: User | null;
@@ -24,6 +26,13 @@ interface AuthContextType {
     weighing_scale_type?: string;
   }) => Promise<User>;
   refreshVendorProfile: () => Promise<User | null>;
+  updateVendorProfile: (payload: {
+    full_name?: string;
+    age?: number | null;
+    service_city?: string;
+    service_area?: string;
+    profile_image?: string | null;
+  }) => Promise<User>;
   logout: () => Promise<void>;
   isLoading: boolean;
   isInitialLoading: boolean;
@@ -31,6 +40,10 @@ interface AuthContextType {
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
+
+const isExpiredAuthError = (error: unknown) =>
+  error instanceof ApiHttpError &&
+  (error.status === 401 || /token expired/i.test(error.message || ''));
 
 const mapVendorToUser = (
   baseUser: Pick<User, 'id' | 'name' | 'phone' | 'email'> & Partial<User>,
@@ -40,8 +53,13 @@ const mapVendorToUser = (
   name: vendorProfile?.full_name || baseUser.name || 'Vendor',
   phone: baseUser.phone || '',
   email: baseUser.email,
+  profileImage: vendorProfile?.profile_image ?? baseUser.profileImage ?? null,
   isOnline: vendorProfile?.is_online ?? baseUser.isOnline ?? false,
-  image: vendorProfile?.profile_image || baseUser.image,
+  image:
+    vendorProfile?.effective_profile_image ||
+    vendorProfile?.profile_image ||
+    vendorProfile?.biometric?.source_image_url ||
+    baseUser.image,
   age: vendorProfile?.age ?? baseUser.age ?? null,
   serviceCity: vendorProfile?.service_city || baseUser.serviceCity,
   serviceArea: vendorProfile?.service_area || baseUser.serviceArea,
@@ -50,12 +68,21 @@ const mapVendorToUser = (
   vehicleType: vendorProfile?.vehicle?.vehicle_type || baseUser.vehicleType,
   hasVendorProfile: Boolean(vendorProfile),
   canGoOnline: vendorProfile?.can_go_online ?? baseUser.canGoOnline ?? false,
+  performanceRating: Number(vendorProfile?.performance_rating ?? baseUser.performanceRating ?? 5),
   onboardingComplete: vendorProfile?.status === 'approved',
   allowPendingAccessWhilePending:
     vendorProfile?.allow_app_access_while_pending ??
     baseUser.allowPendingAccessWhilePending ??
     false,
   rejectionReason: vendorProfile?.rejection_reason ?? baseUser.rejectionReason ?? null,
+  profileImageMissing:
+    vendorProfile?.profile_image_missing ??
+    baseUser.profileImageMissing ??
+    false,
+  requiresProfileImageUpload:
+    vendorProfile?.requires_profile_image_upload ??
+    baseUser.requiresProfileImageUpload ??
+    false,
 });
 
 export const useAuth = () => {
@@ -114,6 +141,13 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
       identifyUser(merged);
       return merged;
     } catch (error) {
+      if (isExpiredAuthError(error)) {
+        await AuthStorageService.clearSession();
+        setUser(null);
+        posthog?.reset?.();
+        throw error;
+      }
+
       if (error instanceof ApiHttpError && error.status === 404) {
         const merged = mapVendorToUser(baseUser, null);
         await persistUser(merged);
@@ -158,11 +192,16 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
         await hydrateWithVendorProfile(storedUser as User);
       } catch (error) {
         console.error('Failed to load user from storage:', error);
-        const fallbackUser = await AuthStorageService.getUser();
-        if (fallbackUser) {
-          setUser(fallbackUser as User);
-        } else {
+        if (isExpiredAuthError(error)) {
           await AuthStorageService.clearSession();
+          setUser(null);
+        } else {
+          const fallbackUser = await AuthStorageService.getUser();
+          if (fallbackUser) {
+            setUser(fallbackUser as User);
+          } else {
+            await AuthStorageService.clearSession();
+          }
         }
       } finally {
         setIsInitialLoading(false);
@@ -266,6 +305,30 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
     return hydrateWithVendorProfile(currentUser as User);
   };
 
+  const updateVendorProfile = async (payload: {
+    full_name?: string;
+    age?: number | null;
+    service_city?: string;
+    service_area?: string;
+    profile_image?: string | null;
+  }) => {
+    setIsLoading(true);
+    try {
+      const currentUser = user || (await AuthStorageService.getUser());
+      if (!currentUser) {
+        throw new Error('No active user session found');
+      }
+
+      const profile = await ApiService.updateVendorProfile(payload);
+      const merged = mapVendorToUser(currentUser as User, profile);
+      await persistUser(merged);
+      identifyUser(merged);
+      return merged;
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   const logout = async () => {
     try {
       const pushToken = await AuthStorageService.getPushToken();
@@ -279,6 +342,9 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
       posthog?.capture?.('vendor_logged_out');
       posthog?.reset?.();
       setUser(null);
+      if (isVendorReviewMode()) {
+        await ReviewModeStateService.clear();
+      }
       await AuthStorageService.clearSession();
     } catch (error) {
       console.error('Failed to clear user from storage:', error);
@@ -313,6 +379,7 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
         completePhoneProfile,
         completeVendorOnboarding,
         refreshVendorProfile,
+        updateVendorProfile,
         logout,
         isLoading,
         isInitialLoading,

@@ -5,6 +5,7 @@ export interface User {
   isOnline: boolean;
   email?: string;
   image?: string;
+  profileImage?: string | null;
   age?: number | null;
   serviceCity?: string;
   serviceArea?: string;
@@ -13,9 +14,12 @@ export interface User {
   vehicleType?: string;
   hasVendorProfile?: boolean;
   canGoOnline?: boolean;
+  performanceRating?: number;
   onboardingComplete?: boolean;
   allowPendingAccessWhilePending?: boolean;
   rejectionReason?: string | null;
+  profileImageMissing?: boolean;
+  requiresProfileImageUpload?: boolean;
 }
 
 export interface BookingRequest {
@@ -127,11 +131,25 @@ export interface BookingActiveResponse {
     total_amount: number;
     customer_upi_id?: string;
   };
+  coordinate_observability?: {
+    pickup_coordinate_source?: string;
+    pickup_coordinates_present?: boolean;
+    vendor_location_timestamp?: string | null;
+    vendor_location_recorded_at?: string | null;
+    vendor_location_accuracy_meters?: number | null;
+    live_distance_meters?: number | null;
+    distance_anomaly?: {
+      flagged: boolean;
+      reason?: string | null;
+    };
+  };
 }
 
 export interface VendorLocationPayload {
   latitude: number;
   longitude: number;
+  accuracy?: number | null;
+  timestamp?: number | string | null;
 }
 
 export interface VendorCoordinates extends VendorLocationPayload {
@@ -149,14 +167,107 @@ export interface SelectedPickupItem extends LeadOrderItem {
 export interface DutySession {
   session_id: string;
   started_at: string;
-  ended_at: string;
+  ended_at: string | null;
   duration_display: string;
   orders_completed: number;
-  vehicle_number: string;
-  vehicle_type: string;
+  vehicle_number?: string | null;
+  vehicle_type?: string | null;
   start_lat: number;
   start_lng: number;
   status: 'live' | 'offline' | string;
+  vehicle?: DutySessionVehicle | null;
+  booking_summary?: DutySessionBookingSummary;
+  bookings?: DutySessionBooking[];
+}
+
+export interface DutySessionVehicle {
+  vehicle_number?: string | null;
+  vehicle_type?: string | null;
+  vehicle_type_display?: string | null;
+  vehicle_label?: string | null;
+  vehicle_name?: string | null;
+  vehicle_model_name?: string | null;
+  weighing_scale_type?: string | null;
+  weighing_scale_type_display?: string | null;
+  is_active?: boolean;
+}
+
+export interface DutySessionBookingSummary {
+  total_bookings: number;
+  completed_bookings: number;
+  unsuccessful_bookings: number;
+}
+
+export interface DutySessionMaterial {
+  product_id?: string | number;
+  product_name: string;
+  quantity?: number;
+  unit?: string;
+  category?: string | null;
+  image_url?: string | null;
+  actual_weight_kg?: number;
+  rate_per_kg?: number;
+  subtotal?: number;
+}
+
+export interface DutySessionQuoteItem {
+  product_id?: string | number;
+  product_name: string;
+  is_selected?: boolean;
+  initial_rate_per_kg?: number;
+  quoted_rate_per_kg?: number;
+  actual_weight_kg?: number;
+  subtotal?: number;
+}
+
+export interface DutySessionQuote {
+  status?: string | null;
+  payment_method?: string | null;
+  total_amount?: number | null;
+  customer_upi_id?: string | null;
+  upi_reference?: string | null;
+  submitted_at?: string | null;
+  responded_at?: string | null;
+  paid_at?: string | null;
+  remarks?: string | null;
+  items?: DutySessionQuoteItem[];
+}
+
+export interface DutySessionBill {
+  subtotal?: number;
+  platform_fee?: number;
+  handling_fee?: number;
+  total_fees?: number;
+  total_payout?: number;
+  currency?: string;
+}
+
+export interface DutySessionBooking {
+  booking_id: string;
+  order_id?: string | number | null;
+  order_number?: string | null;
+  status: string;
+  successful: boolean;
+  cancellation_reason?: string | null;
+  cancelled_at?: string | null;
+  started_at?: string | null;
+  arrived_at?: string | null;
+  completed_at?: string | null;
+  updated_at?: string | null;
+  total_payout?: number | null;
+  customer?: {
+    id?: string | number | null;
+    name?: string | null;
+    phone?: string | null;
+  };
+  customer_photo_provided?: boolean;
+  customer_photo_count?: number;
+  customer_photo_urls?: string[];
+  material_summary?: string;
+  requested_materials?: DutySessionMaterial[];
+  collected_materials?: DutySessionMaterial[];
+  quote?: DutySessionQuote | null;
+  bill?: DutySessionBill | null;
 }
 
 export interface ScrapItem {

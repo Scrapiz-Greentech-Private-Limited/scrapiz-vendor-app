@@ -11,6 +11,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
 import RazorpayCheckout from 'react-native-razorpay';
+import { isVendorReviewMode } from '../../config/reviewMode';
 import { ApiHttpError, ApiService } from '../../services/api';
 import { useAuth } from '../../../hooks/useAuth';
 
@@ -46,6 +47,7 @@ export default function PaymentMethodScreen({
   onPaymentError,
 }: PaymentMethodScreenProps) {
   const { user } = useAuth();
+  const reviewModeEnabled = isVendorReviewMode();
   const [method, setMethod] = useState<PaymentMethod>('visa');
   const [cardNumber, setCardNumber] = useState('');
   const [cvv, setCvv] = useState('');
@@ -75,6 +77,25 @@ export default function PaymentMethodScreen({
       const order = await ApiService.createWalletOrder(amount);
       const razorpayAmount = Number(order.amount || amount);
 
+      if (reviewModeEnabled) {
+        const transactionId = `review-wallet-payment-${Date.now()}`;
+        await ApiService.verifyWalletPayment({
+          razorpay_payment_id: transactionId,
+          razorpay_order_id: order.order_id,
+          razorpay_signature: 'review-signature',
+        });
+
+        onPaymentSuccess({
+          transactionId,
+          date: new Date().toISOString(),
+          transactionType: 'Wallet Recharge',
+          amount: razorpayAmount,
+          taxPercent: 0,
+          status: 'Success',
+        });
+        return;
+      }
+
       const paymentResult = await RazorpayCheckout.open({
         key: order.key,
         amount: Math.round(razorpayAmount * 100),
@@ -86,9 +107,6 @@ export default function PaymentMethodScreen({
           name: user?.name,
           email: user?.email,
           contact: user?.phone,
-        },
-        notes: {
-          selected_method: method,
         },
         theme: {
           color: '#0F766E',

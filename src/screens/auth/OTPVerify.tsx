@@ -15,6 +15,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { ApiService, VerifyOtpResponse } from '../../services/api';
+import { getReviewerSeedData, isVendorReviewMode } from '../../config/reviewMode';
 
 interface OTPVerifyProps {
     phone: string;
@@ -35,7 +36,9 @@ const formatPhoneNumber = (phone: string) => {
 };
 
 export default function OTPVerify({ phone, onBack, onSuccess }: OTPVerifyProps) {
-    const [otp, setOtp] = useState('');
+    const reviewModeEnabled = isVendorReviewMode();
+    const reviewerSeed = getReviewerSeedData();
+    const [otp, setOtp] = useState(reviewModeEnabled ? reviewerSeed.otp : '');
     const [loading, setLoading] = useState(false);
     const [isResending, setIsResending] = useState(false);
     const [countdown, setCountdown] = useState(30);
@@ -126,7 +129,9 @@ export default function OTPVerify({ phone, onBack, onSuccess }: OTPVerifyProps) 
                     <View style={styles.titleSection}>
                         <Text style={styles.title}>Verify your</Text>
                         <Text style={styles.title}>Phone number</Text>
-                        <Text style={styles.subtitle}>Enter your OTP code here</Text>
+                        <Text style={styles.subtitle}>
+                          {reviewModeEnabled ? `Enter reviewer OTP ${reviewerSeed.otp}` : 'Enter your OTP code here'}
+                        </Text>
                     </View>
 
                     {/* OTP Input - Circular Boxes */}

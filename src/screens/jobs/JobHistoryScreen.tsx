@@ -12,6 +12,7 @@ import {
 import { Ionicons, MaterialIcons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { ApiService } from '../../services/api';
+import { trackVendorClick, trackVendorFailure } from '../../services/telemetry';
 import { DutySession } from '../../types';
 import { useAuth } from '../../../hooks/useAuth';
 
@@ -24,33 +25,6 @@ const periods = [
   { label: 'This Week', value: 'this_week' as const },
   { label: 'Last Month', value: 'last_month' as const },
   { label: 'All Time', value: 'all_time' as const },
-];
-
-const FALLBACK_SESSIONS: DutySession[] = [
-  {
-    session_id: 'fallback-session-1',
-    started_at: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString(),
-    ended_at: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000 + 4 * 60 * 60 * 1000).toISOString(),
-    duration_display: '4h 0m',
-    orders_completed: 3,
-    vehicle_number: 'MH01DM8286',
-    vehicle_type: 'bike',
-    start_lat: 19.0176,
-    start_lng: 72.8174,
-    status: 'offline',
-  },
-  {
-    session_id: 'fallback-session-2',
-    started_at: new Date(Date.now() - 4 * 24 * 60 * 60 * 1000).toISOString(),
-    ended_at: new Date(Date.now() - 4 * 24 * 60 * 60 * 1000 + 3 * 60 * 60 * 1000 + 30 * 60 * 1000).toISOString(),
-    duration_display: '3h 30m',
-    orders_completed: 2,
-    vehicle_number: 'MH01DM8286',
-    vehicle_type: 'bike',
-    start_lat: 19.0176,
-    start_lng: 72.8174,
-    status: 'offline',
-  },
 ];
 
 const formatSessionDate = (value?: string) => {
@@ -77,6 +51,23 @@ const initials = (name: string) =>
     .map((part) => part.charAt(0).toUpperCase())
     .join('');
 
+const resolveVehicleLabel = (session: DutySession) =>
+  session.vehicle?.vehicle_label ||
+  session.vehicle?.vehicle_number ||
+  session.vehicle?.vehicle_name ||
+  session.vehicle?.vehicle_model_name ||
+  session.vehicle?.vehicle_type_display ||
+  session.vehicle?.vehicle_type?.replace(/_/g, ' ') ||
+  session.vehicle_number ||
+  session.vehicle_type?.replace(/_/g, ' ') ||
+  'Vehicle added';
+
+const resolveVehicleType = (session: DutySession) =>
+  session.vehicle?.vehicle_type_display ||
+  session.vehicle?.vehicle_type?.replace(/_/g, ' ') ||
+  session.vehicle_type?.replace(/_/g, ' ') ||
+  'Vehicle';
+
 const JobHistoryScreen: React.FC<JobHistoryScreenProps> = ({ onBack, onNavigate }) => {
   const { user } = useAuth();
   const [periodIndex, setPeriodIndex] = useState(1);
@@ -90,10 +81,10 @@ const JobHistoryScreen: React.FC<JobHistoryScreenProps> = ({ onBack, onNavigate 
     setIsLoading(true);
     try {
       const response = await ApiService.getDutySessions(periodValue);
-      const nextSessions = response.sessions || [];
-      setSessions(nextSessions.length ? nextSessions : FALLBACK_SESSIONS);
-    } catch {
-      setSessions(FALLBACK_SESSIONS);
+      setSessions(response.sessions || []);
+    } catch (error) {
+      trackVendorFailure('past_duty_sessions_load', error, { period: periodValue });
+      setSessions([]);
     } finally {
       setIsLoading(false);
     }
@@ -133,12 +124,26 @@ const JobHistoryScreen: React.FC<JobHistoryScreenProps> = ({ onBack, onNavigate 
         <TouchableOpacity
           style={[styles.arrowButton, periodIndex === 0 && styles.arrowButtonDisabled]}
           disabled={periodIndex === 0}
-          onPress={() => shiftPeriod(-1)}
+          onPress={() => {
+            trackVendorClick('past_duty_sessions_period_arrow', {
+              direction: 'backward',
+              current_period: period.value,
+            });
+            shiftPeriod(-1);
+          }}
         >
           <Ionicons name="arrow-back" size={18} color="#475569" />
         </TouchableOpacity>
 
-        <TouchableOpacity style={styles.periodButton} onPress={() => setShowPicker(true)}>
+        <TouchableOpacity
+          style={styles.periodButton}
+          onPress={() => {
+            trackVendorClick('past_duty_sessions_period_picker_open', {
+              current_period: period.value,
+            });
+            setShowPicker(true);
+          }}
+        >
           <Text style={styles.periodLabel}>{period.label}</Text>
           <Ionicons name="chevron-down" size={16} color="#475569" />
         </TouchableOpacity>
@@ -146,7 +151,13 @@ const JobHistoryScreen: React.FC<JobHistoryScreenProps> = ({ onBack, onNavigate 
         <TouchableOpacity
           style={[styles.arrowButton, periodIndex === periods.length - 1 && styles.arrowButtonDisabled]}
           disabled={periodIndex === periods.length - 1}
-          onPress={() => shiftPeriod(1)}
+          onPress={() => {
+            trackVendorClick('past_duty_sessions_period_arrow', {
+              direction: 'forward',
+              current_period: period.value,
+            });
+            shiftPeriod(1);
+          }}
         >
           <Ionicons name="arrow-forward" size={18} color="#475569" />
         </TouchableOpacity>
@@ -162,7 +173,13 @@ const JobHistoryScreen: React.FC<JobHistoryScreenProps> = ({ onBack, onNavigate 
             <TouchableOpacity
               key={session.session_id}
               style={styles.card}
-              onPress={() => onNavigate?.('duty-session-details', { session })}
+              onPress={() => {
+                trackVendorClick('past_duty_sessions_open_record', {
+                  session_id: session.session_id,
+                  booking_count: session.booking_summary?.total_bookings ?? session.orders_completed,
+                });
+                onNavigate?.('duty-session-details', { session });
+              }}
               activeOpacity={0.85}
             >
               <View style={styles.topRow}>
@@ -180,23 +197,25 @@ const JobHistoryScreen: React.FC<JobHistoryScreenProps> = ({ onBack, onNavigate 
 
               <View style={styles.divider} />
 
-              <View style={styles.bottomRow}>
-                <View style={styles.vehicleWrap}>
-                  <View style={styles.vehicleIconBox}>
-                    <MaterialIcons name="two-wheeler" size={18} color="#94A3B8" />
+                <View style={styles.bottomRow}>
+                  <View style={styles.vehicleWrap}>
+                    <View style={styles.vehicleIconBox}>
+                      <MaterialIcons name="two-wheeler" size={18} color="#94A3B8" />
+                    </View>
+                    <View>
+                      <Text style={styles.vehicleTitle}>{resolveVehicleType(session)}</Text>
+                      <Text style={styles.vehicleSub}>{resolveVehicleLabel(session)}</Text>
+                    </View>
                   </View>
-                  <View>
-                    <Text style={styles.vehicleTitle}>Access</Text>
-                    <Text style={styles.vehicleSub}>{session.vehicle_number}</Text>
+                  <View style={styles.timeWrap}>
+                    <Text style={styles.timeLine}>started : {formatSessionDate(session.started_at)}</Text>
+                    <Text style={styles.timeLine}>ended : {formatSessionDate(session.ended_at || undefined)}</Text>
+                    <Text style={styles.ordersLine}>
+                      {session.booking_summary?.total_bookings ?? session.orders_completed} booking record(s)
+                    </Text>
                   </View>
                 </View>
-                <View style={styles.timeWrap}>
-                  <Text style={styles.timeLine}>started : {formatSessionDate(session.started_at)}</Text>
-                  <Text style={styles.timeLine}>ended : {formatSessionDate(session.ended_at)}</Text>
-                  <Text style={styles.ordersLine}>{session.orders_completed} previous orders</Text>
-                </View>
-              </View>
-            </TouchableOpacity>
+              </TouchableOpacity>
           ))}
 
           {!sessions.length && <Text style={styles.emptyText}>No sessions found for this period.</Text>}
@@ -213,6 +232,9 @@ const JobHistoryScreen: React.FC<JobHistoryScreenProps> = ({ onBack, onNavigate 
                   key={option.value}
                   style={[styles.modalOption, selected && styles.modalOptionSelected]}
                   onPress={() => {
+                    trackVendorClick('past_duty_sessions_period_selected', {
+                      selected_period: option.value,
+                    });
                     setPeriodIndex(index);
                     setShowPicker(false);
                   }}

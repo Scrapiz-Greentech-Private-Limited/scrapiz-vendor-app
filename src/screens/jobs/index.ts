@@ -1,4 +1,5 @@
 export { default as ActiveJob } from './ActiveJob';
+export { default as ArrivalVerifyScreen } from '../booking/ArrivalVerifyScreen';
 export { default as BookingDetailsScreen } from './BookingDetailsScreen';
 export { default as BookingRequestScreen } from './BookingRequestScreen';
 export { default as DutySessionDetailsScreen } from './DutySessionDetailsScreen';

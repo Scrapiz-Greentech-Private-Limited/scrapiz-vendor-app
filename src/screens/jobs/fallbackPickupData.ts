@@ -1,6 +1,7 @@
 import Constants from 'expo-constants';
 import { ApiService, InventoryCategory } from '../../services/api';
 import { BookingRequest, LeadDetailsResponse, LeadOrderItem } from '../../types';
+import { isVendorReviewMode } from '../../config/reviewMode';
 
 const FALLBACK_BOOKING_IDS = ['fallback-live-1', 'fallback-live-2'];
 
@@ -238,7 +239,7 @@ const ensureFallbackCache = async () => {
   FALLBACK_LEAD_CACHE.set(FALLBACK_BOOKING_IDS[1], bookingTwoItems);
 };
 
-export const isFallbackAppTestingEnabled = () => toBool(getFallbackModeRawValue());
+export const isFallbackAppTestingEnabled = () => isVendorReviewMode() || toBool(getFallbackModeRawValue());
 
 export const buildFallbackBookings = async (): Promise<BookingRequest[]> => {
   if (!isFallbackAppTestingEnabled()) {

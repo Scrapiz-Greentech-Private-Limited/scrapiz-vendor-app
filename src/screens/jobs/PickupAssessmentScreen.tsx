@@ -74,7 +74,7 @@ const PickupAssessmentScreen: React.FC<PickupAssessmentScreenProps> = ({
 
     setIsSubmitting(true);
     try {
-      const response = await ApiService.acceptLead(leadId);
+      const response = await ApiService.acceptLead(leadId, selectedItems);
       const bookingId = response.booking_id || leadId;
 
       // Ensure strict arrival flow can proceed by moving confirmed -> en_route.

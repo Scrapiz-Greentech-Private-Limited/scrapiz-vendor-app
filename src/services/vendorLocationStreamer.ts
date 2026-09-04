@@ -198,7 +198,12 @@ class VendorLocationStreamer {
   }
 
   private async sendLocation(latitude: number, longitude: number) {
-    const payload = JSON.stringify({ latitude, longitude });
+    const payload = JSON.stringify({
+      latitude,
+      longitude,
+      accuracy: this.latestCoords?.accuracy ?? null,
+      timestamp: this.latestCoords?.timestamp ?? null,
+    });
 
     if (this.ws?.readyState === WebSocket.OPEN) {
       this.ws.send(payload);
@@ -206,7 +211,12 @@ class VendorLocationStreamer {
     }
 
     try {
-      await ApiService.updateVendorLocation({ latitude, longitude });
+      await ApiService.updateVendorLocation({
+        latitude,
+        longitude,
+        accuracy: this.latestCoords?.accuracy ?? null,
+        timestamp: this.latestCoords?.timestamp ?? null,
+      });
     } catch {
       // Ignore fallback failures to keep streaming resilient.
     }
@@ -233,6 +243,8 @@ class VendorLocationStreamer {
         await ApiService.updateVendorLocation({
           latitude: this.latestCoords.latitude,
           longitude: this.latestCoords.longitude,
+          accuracy: this.latestCoords.accuracy ?? null,
+          timestamp: this.latestCoords.timestamp ?? null,
         });
       } catch {
         // Ignore heartbeat failures to avoid interrupting live tracking.
@@ -260,6 +272,8 @@ class VendorLocationStreamer {
       await ApiService.updateVendorLocation({
         latitude: coords.latitude,
         longitude: coords.longitude,
+        accuracy: coords.accuracy ?? null,
+        timestamp: coords.timestamp ?? null,
       });
     } catch {
       // Ignore heartbeat failures to avoid interrupting live tracking.

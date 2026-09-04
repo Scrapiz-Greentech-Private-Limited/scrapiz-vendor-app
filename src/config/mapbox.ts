@@ -2,7 +2,7 @@ import Constants from 'expo-constants';
 import Mapbox from '@rnmapbox/maps';
 
 const FALLBACK_PUBLIC_MAPBOX_TOKEN =
-  '<MAPBOX_PUBLIC_TOKEN>';
+  'pk.eyJ1IjoiYXlhYW5hbWphZCIsImEiOiJjbWhxbW1veHcwdnB2MmpzNDA2emo1aWp3In0.Mc5kN89_lqGeagn5jWvvzA';
 
 const expoExtraToken =
   (Constants.expoConfig?.extra?.mapboxAccessToken as string | undefined) ||

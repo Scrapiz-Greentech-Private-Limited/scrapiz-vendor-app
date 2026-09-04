@@ -2,16 +2,17 @@ import React, { useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  FlatList,
   Image,
-  SafeAreaView,
-  ScrollView,
   StatusBar,
   StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
   View,
+  useColorScheme,
 } from 'react-native';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons, MaterialIcons } from '@expo/vector-icons';
 import {
   ApiService,
@@ -22,6 +23,7 @@ import {
 interface MaterialsScreenProps {
   onBack: () => void;
   onNavigate: (screen: string) => void;
+  onSelectProduct: (product: VendorQuotedMaterialProduct, categoryName?: string | null) => void;
 }
 
 const formatPriceRange = (product: VendorQuotedMaterialProduct) => {
@@ -34,21 +36,20 @@ const formatPriceRange = (product: VendorQuotedMaterialProduct) => {
   return `₹${price.toFixed(0)} / ${product.unit || 'unit'}`;
 };
 
-const getCategoryDescription = (categoryName?: string, count?: number) => {
-  const title = (categoryName || 'Materials').toLowerCase();
-  if (title.includes('metal')) return `Types of metal scraps • ${count || 0} products`;
-  if (title.includes('electronic') || title.includes('e-waste')) return `Types of electronic scraps • ${count || 0} products`;
-  if (title.includes('paper')) return `Paper and board materials • ${count || 0} products`;
-  if (title.includes('plastic')) return `Plastic recovery materials • ${count || 0} products`;
-  return `${count || 0} products available for vendor pricing`;
+type MaterialGridItem = VendorQuotedMaterialProduct & {
+  categoryId: string;
+  categoryName: string;
 };
 
-export default function MaterialsScreen({ onBack }: MaterialsScreenProps) {
+export default function MaterialsScreen({ onBack, onSelectProduct }: MaterialsScreenProps) {
+  const insets = useSafeAreaInsets();
+  const colorScheme = useColorScheme();
+  const isDark = colorScheme === 'dark';
   const [categories, setCategories] = useState<VendorMaterialCategory[]>([]);
-  const [selectedCategoryId, setSelectedCategoryId] = useState<string | number | null>(null);
+  const [selectedCategoryId, setSelectedCategoryId] = useState<string>('all');
   const [isLoading, setIsLoading] = useState(true);
-  const [isSaving, setIsSaving] = useState(false);
-  const [quoteInputs, setQuoteInputs] = useState<Record<string, string>>({});
+  const [searchQuery, setSearchQuery] = useState('');
+  const [showQuotedOnly, setShowQuotedOnly] = useState(false);
 
   const loadCategories = async () => {
     setIsLoading(true);
@@ -56,15 +57,6 @@ export default function MaterialsScreen({ onBack }: MaterialsScreenProps) {
       const response = await ApiService.getVendorMaterialCategories();
       const nextCategories = response.categories || [];
       setCategories(nextCategories);
-      const nextInputs: Record<string, string> = {};
-      nextCategories.forEach((category) => {
-        category.products.forEach((product) => {
-          if (product.vendor_quote) {
-            nextInputs[String(product.id)] = String(product.vendor_quote);
-          }
-        });
-      });
-      setQuoteInputs(nextInputs);
     } catch (error: any) {
       Alert.alert('Unable to load materials', error?.message || 'Please try again in a moment.');
     } finally {
@@ -76,239 +68,283 @@ export default function MaterialsScreen({ onBack }: MaterialsScreenProps) {
     loadCategories();
   }, []);
 
-  const selectedCategory = useMemo(
-    () => categories.find((category) => String(category.id) === String(selectedCategoryId)) || null,
-    [categories, selectedCategoryId],
+  const palette = useMemo(
+    () => ({
+      background: isDark ? '#0B0F0D' : '#F3F7F4',
+      surface: isDark ? '#111915' : '#FFFFFF',
+      surfaceSoft: isDark ? '#141E19' : '#E9F7EE',
+      border: isDark ? '#1F2A22' : '#E2E8E3',
+      textMain: isDark ? '#F8FAFC' : '#0F172A',
+      textMuted: isDark ? '#94A3B8' : '#64748B',
+      accent: '#1B7332',
+      chip: isDark ? '#0F1A14' : '#EFF6F1',
+    }),
+    [isDark],
   );
 
-  const totalProducts = useMemo(
-    () => categories.reduce((sum, category) => sum + (category.products?.length || 0), 0),
+  const categoryTabs = useMemo(
+    () => [{ id: 'all', name: 'All' }, ...categories],
     [categories],
   );
 
-  const hasEditedQuotes = useMemo(() => {
-    return Object.values(quoteInputs).some((value) => value.trim().length > 0);
-  }, [quoteInputs]);
-
-  const handleSaveQuotes = async () => {
-    if (!selectedCategory) {
-      return;
-    }
-
-    const payload = selectedCategory.products
-      .map((product) => ({
-        product_id: product.id,
-        quoted_price: Number(quoteInputs[String(product.id)]),
-      }))
-      .filter((item) => Number.isFinite(item.quoted_price) && item.quoted_price >= 0);
-
-    if (payload.length === 0) {
-      Alert.alert('Nothing to save', 'Enter at least one quote before saving.');
-      return;
-    }
-
-    setIsSaving(true);
-    try {
-      await ApiService.saveVendorMaterialQuotes(payload);
-      Alert.alert('Saved', 'Your quoted prices have been updated successfully.');
-      await loadCategories();
-    } catch (error: any) {
-      Alert.alert('Save failed', error?.message || 'Unable to save quoted prices right now.');
-    } finally {
-      setIsSaving(false);
-    }
-  };
-
-  const renderCategoryOverview = () => (
-    <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-      <View style={styles.heroBlock}>
-        <Text style={styles.heroTitle}>Materials</Text>
-        <Text style={styles.heroSubtitle}>{totalProducts} products across live inventory categories</Text>
-      </View>
-
-      <View style={styles.categoryGrid}>
-        {categories.map((category) => (
-          <TouchableOpacity
-            key={String(category.id)}
-            style={styles.categoryCard}
-            activeOpacity={0.9}
-            onPress={() => setSelectedCategoryId(category.id)}
-          >
-            <View style={styles.categoryMedia}>
-              {category.image_url ? (
-                <Image source={{ uri: category.image_url }} style={styles.categoryImage} />
-              ) : (
-                <View style={styles.categoryFallback}>
-                  <MaterialIcons name="category" size={26} color="#166534" />
-                </View>
-              )}
-            </View>
-            <View style={styles.categoryCopy}>
-              <Text style={styles.categoryTitle}>{category.name || 'Materials'}</Text>
-              <Text style={styles.categoryDescription}>
-                {getCategoryDescription(category.name, category.products?.length || 0)}
-              </Text>
-            </View>
-            <View style={styles.categoryFooter}>
-              <Text style={styles.categoryFooterText}>Open category</Text>
-              <Ionicons name="chevron-forward" size={18} color="#166534" />
-            </View>
-          </TouchableOpacity>
-        ))}
-      </View>
-    </ScrollView>
+  const allProducts: MaterialGridItem[] = useMemo(
+    () =>
+      categories.flatMap((category) =>
+        category.products.map((product) => ({
+          ...product,
+          categoryId: String(category.id),
+          categoryName: category.name || 'Materials',
+        })),
+      ),
+    [categories],
   );
 
-  const renderCategoryProducts = () => {
-    if (!selectedCategory) {
-      return renderCategoryOverview();
-    }
+  const filteredProducts = useMemo(() => {
+    return allProducts.filter((product) => {
+      const matchesCategory = selectedCategoryId === 'all' || product.categoryId === selectedCategoryId;
+      const matchesSearch = product.name?.toLowerCase().includes(searchQuery.toLowerCase()) || false;
+      const matchesQuote = !showQuotedOnly || Boolean(product.vendor_quote);
+      return matchesCategory && matchesSearch && matchesQuote;
+    });
+  }, [allProducts, selectedCategoryId, searchQuery, showQuotedOnly]);
 
-    return (
-      <View style={styles.screenFill}>
-        <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-          <TouchableOpacity style={styles.categoryBackChip} onPress={() => setSelectedCategoryId(null)}>
-            <Ionicons name="arrow-back" size={16} color="#166534" />
-            <Text style={styles.categoryBackChipText}>All categories</Text>
-          </TouchableOpacity>
+  const quotedCount = useMemo(() => allProducts.filter((product) => Boolean(product.vendor_quote)).length, [allProducts]);
 
-          <View style={styles.detailHero}>
-            <Text style={styles.detailTitle}>{selectedCategory.name || 'Materials'}</Text>
-            <Text style={styles.detailSubtitle}>
-              {getCategoryDescription(selectedCategory.name, selectedCategory.products?.length || 0)}
-            </Text>
-          </View>
-
-          <View style={styles.productList}>
-            {selectedCategory.products.map((product) => (
-              <View key={String(product.id)} style={styles.productCard}>
-                <View style={styles.productTopRow}>
-                  <View style={styles.productImageWrap}>
-                    {product.image_url ? (
-                      <Image source={{ uri: product.image_url }} style={styles.productImage} />
-                    ) : (
-                      <View style={styles.productFallback}>
-                        <MaterialIcons name="inventory-2" size={22} color="#166534" />
-                      </View>
-                    )}
-                  </View>
-                  <View style={styles.productMeta}>
-                    <Text style={styles.productTitle}>{product.name || 'Material item'}</Text>
-                    <Text style={styles.productRate}>{formatPriceRange(product)}</Text>
-                    {product.description ? (
-                      <Text style={styles.productDescription} numberOfLines={2}>
-                        {product.description}
-                      </Text>
-                    ) : null}
-                  </View>
-                </View>
-
-                <View style={styles.quoteSection}>
-                  <Text style={styles.quoteLabel}>Your quoted price</Text>
-                  <View style={styles.quoteInputWrap}>
-                    <Text style={styles.quotePrefix}>₹</Text>
-                    <TextInput
-                      keyboardType="decimal-pad"
-                      value={quoteInputs[String(product.id)] || ''}
-                      onChangeText={(value) =>
-                        setQuoteInputs((current) => ({
-                          ...current,
-                          [String(product.id)]: value.replace(/[^0-9.]/g, ''),
-                        }))
-                      }
-                      placeholder="Enter your rate"
-                      placeholderTextColor="#94A3B8"
-                      style={styles.quoteInput}
-                    />
-                    <Text style={styles.quoteUnit}>per {product.unit || 'unit'}</Text>
-                  </View>
-                </View>
-              </View>
-            ))}
-          </View>
-        </ScrollView>
-
-        <View style={styles.bottomBar}>
-          <Text style={styles.bottomBarHint}>
-            Prices are stored per vendor and shown against live inventory products from the dashboard.
-          </Text>
-          <TouchableOpacity
-            style={[styles.saveButton, (!hasEditedQuotes || isSaving) && styles.saveButtonDisabled]}
-            disabled={!hasEditedQuotes || isSaving}
-            onPress={handleSaveQuotes}
-          >
-            {isSaving ? (
-              <ActivityIndicator color="#FFFFFF" />
-            ) : (
-              <Text style={styles.saveButtonText}>Save quoted prices</Text>
-            )}
-          </TouchableOpacity>
-        </View>
+  const renderHeader = () => (
+    <View>
+      <View style={styles.heroBlock}>
+        <Text style={[styles.heroTitle, { color: palette.textMain }]}>Materials</Text>
+        <Text style={[styles.heroSubtitle, { color: palette.textMuted }]}>Browse, quote, and compare</Text>
       </View>
-    );
-  };
+
+      <View style={[styles.searchWrap, { backgroundColor: palette.surface, borderColor: palette.border }]}
+      >
+        <MaterialIcons name="search" size={20} color={palette.textMuted} />
+        <TextInput
+          value={searchQuery}
+          onChangeText={setSearchQuery}
+          placeholder="Search materials"
+          placeholderTextColor={palette.textMuted}
+          style={[styles.searchInput, { color: palette.textMain }]}
+        />
+        {searchQuery.length > 0 ? (
+          <TouchableOpacity onPress={() => setSearchQuery('')} style={styles.clearButton}>
+            <Ionicons name="close" size={16} color={palette.textMuted} />
+          </TouchableOpacity>
+        ) : null}
+      </View>
+
+      <View style={styles.tabsRow}>
+        <FlatList
+          data={categoryTabs}
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          keyExtractor={(item) => String(item.id)}
+          contentContainerStyle={styles.tabsContent}
+          renderItem={({ item }) => {
+            const isActive = String(item.id) === selectedCategoryId;
+            return (
+              <TouchableOpacity
+                onPress={() => setSelectedCategoryId(String(item.id))}
+                style={[
+                  styles.tabChip,
+                  { backgroundColor: isActive ? palette.accent : palette.chip, borderColor: palette.border },
+                ]}
+              >
+                <Text style={[styles.tabText, { color: isActive ? '#FFFFFF' : palette.textMuted }]}>
+                  {item.name || 'Category'}
+                </Text>
+              </TouchableOpacity>
+            );
+          }}
+        />
+      </View>
+    </View>
+  );
 
   return (
-    <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
-      <View style={styles.header}>
-        <TouchableOpacity onPress={selectedCategoryId ? () => setSelectedCategoryId(null) : onBack} style={styles.backButton}>
-          <Ionicons name="chevron-back" size={24} color="#0F172A" />
+    <SafeAreaView style={[styles.container, { backgroundColor: palette.background }]} edges={['left', 'right', 'bottom']}>
+      <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} backgroundColor={palette.background} />
+      <View style={[styles.header, { paddingTop: Math.max(insets.top + 6, 14), backgroundColor: palette.surface, borderBottomColor: palette.border }]}
+      >
+        <TouchableOpacity onPress={onBack} style={[styles.backButton, { backgroundColor: palette.surfaceSoft, borderColor: palette.border }]}
+        >
+          <Ionicons name="chevron-back" size={22} color={palette.textMain} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Material Pricing</Text>
-        <TouchableOpacity onPress={loadCategories} style={styles.refreshButton}>
-          <Ionicons name="refresh" size={20} color="#166534" />
+        <Text style={[styles.headerTitle, { color: palette.textMain }]}>Material Pricing</Text>
+        <TouchableOpacity
+          onPress={() => setShowQuotedOnly((prev) => !prev)}
+          style={[styles.quotedButton, showQuotedOnly && styles.quotedButtonActive]}
+        >
+          <MaterialIcons name="price-check" size={20} color={showQuotedOnly ? '#FFFFFF' : palette.textMain} />
+          <View style={styles.quotedBadge}>
+            <Text style={styles.quotedBadgeText}>{quotedCount}</Text>
+          </View>
         </TouchableOpacity>
       </View>
 
       {isLoading ? (
         <View style={styles.loaderWrap}>
-          <ActivityIndicator size="large" color="#166534" />
-          <Text style={styles.loaderText}>Loading inventory categories...</Text>
+          <ActivityIndicator size="large" color={palette.accent} />
+          <Text style={[styles.loaderText, { color: palette.textMuted }]}>Loading inventory...</Text>
         </View>
-      ) : selectedCategoryId ? (
-        renderCategoryProducts()
       ) : (
-        renderCategoryOverview()
+        <FlatList
+          data={filteredProducts}
+          keyExtractor={(item) => String(item.id)}
+          numColumns={2}
+          columnWrapperStyle={styles.gridRow}
+          contentContainerStyle={[styles.content, { paddingBottom: Math.max(insets.bottom + 90, 140) }]}
+          showsVerticalScrollIndicator={false}
+          ListHeaderComponent={renderHeader}
+          renderItem={({ item }) => (
+            <TouchableOpacity
+              style={[styles.productCard, { backgroundColor: palette.surface, borderColor: palette.border }]}
+              activeOpacity={0.88}
+              onPress={() => onSelectProduct(item, item.categoryName)}
+            >
+              <View style={styles.productMedia}>
+                {item.image_url ? (
+                  <Image source={{ uri: item.image_url }} style={styles.productImage} />
+                ) : (
+                  <View style={[styles.productFallback, { backgroundColor: palette.surfaceSoft }]}>
+                    <MaterialIcons name="inventory-2" size={24} color={palette.accent} />
+                  </View>
+                )}
+              </View>
+              <View style={styles.productBody}>
+                <Text style={[styles.productTitle, { color: palette.textMain }]} numberOfLines={1}>
+                  {item.name || 'Material'}
+                </Text>
+                <Text style={[styles.productPrice, { color: palette.accent }]} numberOfLines={1}>
+                  {formatPriceRange(item)}
+                </Text>
+                {item.vendor_quote ? (
+                  <View style={[styles.quotedChip, { backgroundColor: palette.surfaceSoft, borderColor: palette.border }]}
+                  >
+                    <MaterialIcons name="verified" size={12} color={palette.accent} />
+                    <Text style={[styles.quotedChipText, { color: palette.textMuted }]}>Quoted</Text>
+                  </View>
+                ) : null}
+              </View>
+            </TouchableOpacity>
+          )}
+          ListEmptyComponent={
+            <View style={styles.emptyWrap}>
+              <MaterialIcons name="search-off" size={36} color={palette.textMuted} />
+              <Text style={[styles.emptyTitle, { color: palette.textMain }]}>No materials found</Text>
+              <Text style={[styles.emptySubtitle, { color: palette.textMuted }]}>Try another category</Text>
+            </View>
+          }
+        />
       )}
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#F6F8F6' },
-  screenFill: { flex: 1 },
+  container: {
+    flex: 1,
+  },
+  heroBlock: {
+    paddingTop: 18,
+    paddingBottom: 10,
+  },
+  heroTitle: {
+    fontSize: 36,
+    fontWeight: '800',
+  },
+  heroSubtitle: {
+    marginTop: 6,
+    fontSize: 15,
+    fontWeight: '600',
+  },
+  searchWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: 18,
+    borderWidth: 1,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+  },
+  searchInput: {
+    flex: 1,
+    marginLeft: 8,
+    fontSize: 15,
+    fontWeight: '600',
+  },
+  clearButton: {
+    padding: 4,
+  },
+  tabsRow: {
+    marginTop: 16,
+    marginBottom: 10,
+  },
+  tabsContent: {
+    paddingHorizontal: 2,
+    gap: 10,
+  },
+  tabChip: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 18,
+    borderWidth: 1,
+  },
+  tabText: {
+    fontSize: 13,
+    fontWeight: '700',
+  },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 18,
-    paddingTop: 8,
-    paddingBottom: 10,
-    backgroundColor: '#FFFFFF',
+    paddingBottom: 14,
+    borderBottomWidth: 1,
   },
   backButton: {
-    width: 40,
-    height: 40,
+    width: 44,
+    height: 44,
     borderRadius: 14,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#F1F5F9',
+    borderWidth: 1,
   },
   headerTitle: {
     flex: 1,
     marginLeft: 12,
+    marginRight: 10,
     fontSize: 22,
     fontWeight: '800',
-    color: '#0F172A',
   },
-  refreshButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 14,
+  quotedButton: {
+    width: 46,
+    height: 46,
+    borderRadius: 16,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#E9F7EE',
+    borderWidth: 1,
+    backgroundColor: 'transparent',
+  },
+  quotedButtonActive: {
+    backgroundColor: '#1B7332',
+  },
+  quotedBadge: {
+    position: 'absolute',
+    top: 6,
+    right: 6,
+    minWidth: 18,
+    height: 18,
+    borderRadius: 9,
+    backgroundColor: '#DC2626',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 4,
+  },
+  quotedBadgeText: {
+    color: '#FFFFFF',
+    fontSize: 10,
+    fontWeight: '800',
   },
   loaderWrap: {
     flex: 1,
@@ -317,239 +353,74 @@ const styles = StyleSheet.create({
   },
   loaderText: {
     marginTop: 12,
-    color: '#64748B',
     fontSize: 15,
   },
   content: {
-    paddingHorizontal: 18,
-    paddingTop: 18,
-    paddingBottom: 160,
+    flexGrow: 1,
   },
-  heroBlock: {
-    marginBottom: 18,
-  },
-  heroTitle: {
-    fontSize: 36,
-    fontWeight: '800',
-    color: '#0F172A',
-  },
-  heroSubtitle: {
-    marginTop: 6,
-    color: '#166534',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  categoryGrid: {
-    gap: 14,
-  },
-  categoryCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 28,
-    padding: 16,
-    borderWidth: 1,
-    borderColor: '#E4EBE6',
-  },
-  categoryMedia: {
-    height: 136,
-    borderRadius: 22,
-    backgroundColor: '#EFF6F1',
-    marginBottom: 14,
-    overflow: 'hidden',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  categoryImage: {
-    width: '100%',
-    height: '100%',
-    resizeMode: 'cover',
-  },
-  categoryFallback: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    backgroundColor: '#DCFCE7',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  categoryCopy: {
-    minHeight: 74,
-  },
-  categoryTitle: {
-    fontSize: 22,
-    fontWeight: '800',
-    color: '#0F172A',
-  },
-  categoryDescription: {
-    marginTop: 6,
-    color: '#64748B',
-    fontSize: 15,
-    lineHeight: 22,
-  },
-  categoryFooter: {
-    marginTop: 14,
-    flexDirection: 'row',
-    alignItems: 'center',
+  gridRow: {
     justifyContent: 'space-between',
-    borderTopWidth: 1,
-    borderTopColor: '#EEF2EF',
-    paddingTop: 14,
-  },
-  categoryFooterText: {
-    color: '#166534',
-    fontSize: 15,
-    fontWeight: '700',
-  },
-  categoryBackChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    alignSelf: 'flex-start',
-    backgroundColor: '#E9F7EE',
-    borderRadius: 999,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    marginBottom: 14,
-  },
-  categoryBackChipText: {
-    marginLeft: 6,
-    color: '#166534',
-    fontWeight: '700',
-  },
-  detailHero: {
-    marginBottom: 18,
-  },
-  detailTitle: {
-    fontSize: 32,
-    fontWeight: '800',
-    color: '#0F172A',
-  },
-  detailSubtitle: {
-    marginTop: 6,
-    color: '#64748B',
-    fontSize: 16,
-    lineHeight: 23,
-  },
-  productList: {
-    gap: 14,
+    gap: 12,
   },
   productCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 24,
-    padding: 16,
+    flex: 1,
+    borderRadius: 26,
     borderWidth: 1,
-    borderColor: '#E4EBE6',
-  },
-  productTopRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  productImageWrap: {
-    width: 76,
-    height: 76,
-    borderRadius: 20,
-    backgroundColor: '#F8FAFC',
+    marginBottom: 12,
     overflow: 'hidden',
-    alignItems: 'center',
-    justifyContent: 'center',
+  },
+  productMedia: {
+    height: 120,
   },
   productImage: {
     width: '100%',
     height: '100%',
-    resizeMode: 'cover',
   },
   productFallback: {
-    width: 76,
-    height: 76,
-    borderRadius: 20,
-    backgroundColor: '#E9F7EE',
+    flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  productMeta: {
-    flex: 1,
-    marginLeft: 14,
+  productBody: {
+    paddingHorizontal: 12,
+    paddingVertical: 12,
   },
   productTitle: {
-    fontSize: 18,
+    fontSize: 14,
     fontWeight: '800',
-    color: '#0F172A',
+    marginBottom: 4,
   },
-  productRate: {
-    marginTop: 6,
-    color: '#166534',
-    fontSize: 15,
+  productPrice: {
+    fontSize: 12,
     fontWeight: '700',
   },
-  productDescription: {
+  quotedChip: {
     marginTop: 8,
-    color: '#64748B',
-    fontSize: 14,
-    lineHeight: 20,
-  },
-  quoteSection: {
-    marginTop: 16,
-  },
-  quoteLabel: {
-    color: '#475569',
-    fontSize: 14,
-    fontWeight: '700',
-    marginBottom: 8,
-  },
-  quoteInputWrap: {
     flexDirection: 'row',
     alignItems: 'center',
+    alignSelf: 'flex-start',
+    borderRadius: 999,
     borderWidth: 1,
-    borderColor: '#D9E2DC',
-    borderRadius: 18,
-    backgroundColor: '#F8FAFC',
-    paddingHorizontal: 14,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    gap: 4,
   },
-  quotePrefix: {
-    fontSize: 18,
-    fontWeight: '800',
-    color: '#0F172A',
-    marginRight: 8,
+  quotedChipText: {
+    fontSize: 11,
+    fontWeight: '700',
   },
-  quoteInput: {
-    flex: 1,
-    minHeight: 52,
+  emptyWrap: {
+    alignItems: 'center',
+    paddingVertical: 40,
+  },
+  emptyTitle: {
+    marginTop: 12,
     fontSize: 16,
-    color: '#0F172A',
+    fontWeight: '800',
   },
-  quoteUnit: {
-    color: '#64748B',
+  emptySubtitle: {
+    marginTop: 4,
     fontSize: 13,
     fontWeight: '600',
-  },
-  bottomBar: {
-    position: 'absolute',
-    left: 16,
-    right: 16,
-    bottom: 16,
-    borderRadius: 24,
-    backgroundColor: '#FFFFFF',
-    padding: 16,
-    borderWidth: 1,
-    borderColor: '#E5ECE7',
-  },
-  bottomBarHint: {
-    textAlign: 'center',
-    color: '#64748B',
-    lineHeight: 20,
-    marginBottom: 12,
-  },
-  saveButton: {
-    height: 54,
-    borderRadius: 18,
-    backgroundColor: '#166534',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  saveButtonDisabled: {
-    opacity: 0.55,
-  },
-  saveButtonText: {
-    color: '#FFFFFF',
-    fontSize: 17,
-    fontWeight: '800',
   },
 });

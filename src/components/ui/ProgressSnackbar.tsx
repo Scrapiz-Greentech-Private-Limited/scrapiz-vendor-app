@@ -1,152 +1,356 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useMemo, useRef } from 'react';
 import {
-    View,
-    Text,
-    StyleSheet,
-    Animated,
-    Dimensions,
-    Platform
+  ActivityIndicator,
+  Animated,
+  Easing,
+  Platform,
+  StyleSheet,
+  Text,
+  View,
 } from 'react-native';
 
 interface ProgressSnackbarProps {
-    visible: boolean;
-    progress: number; // 0 to 100
-    label: string;
-    themeColor?: string;
+  visible: boolean;
+  progress: number;
+  label: string;
+  subtitle?: string;
+  themeColor?: string;
 }
 
 const ProgressSnackbar = ({
-    visible,
-    progress,
-    label,
-    themeColor = '#16a34a'
+  visible,
+  progress,
+  label,
+  subtitle,
+  themeColor = '#16a34a',
 }: ProgressSnackbarProps) => {
-    const fadeAnim = useRef(new Animated.Value(0)).current;
-    const slideAnim = useRef(new Animated.Value(20)).current;
-    const progressWidth = useRef(new Animated.Value(0)).current;
+  const overlayOpacity = useRef(new Animated.Value(0)).current;
+  const cardTranslateY = useRef(new Animated.Value(28)).current;
+  const cardScale = useRef(new Animated.Value(0.96)).current;
+  const progressWidth = useRef(new Animated.Value(0)).current;
+  const rotateAnim = useRef(new Animated.Value(0)).current;
+  const pulseAnim = useRef(new Animated.Value(0.85)).current;
+  const shimmerAnim = useRef(new Animated.Value(0)).current;
 
-    // Handles showing/hiding the snackbar
-    useEffect(() => {
-        Animated.parallel([
-            Animated.timing(fadeAnim, {
-                toValue: visible ? 1 : 0,
-                duration: 300,
-                useNativeDriver: true,
-            }),
-            Animated.spring(slideAnim, {
-                toValue: visible ? 0 : 20,
-                useNativeDriver: true,
-                tension: 40,
-                friction: 8,
-            }),
-        ]).start();
-    }, [visible]);
+  useEffect(() => {
+    Animated.parallel([
+      Animated.timing(overlayOpacity, {
+        toValue: visible ? 1 : 0,
+        duration: visible ? 240 : 180,
+        easing: Easing.out(Easing.quad),
+        useNativeDriver: true,
+      }),
+      Animated.spring(cardTranslateY, {
+        toValue: visible ? 0 : 28,
+        useNativeDriver: true,
+        tension: 60,
+        friction: 10,
+      }),
+      Animated.spring(cardScale, {
+        toValue: visible ? 1 : 0.96,
+        useNativeDriver: true,
+        tension: 60,
+        friction: 10,
+      }),
+    ]).start();
+  }, [cardScale, cardTranslateY, overlayOpacity, visible]);
 
-    // Handles the smooth progress bar transition
-    useEffect(() => {
-        Animated.timing(progressWidth, {
-            toValue: progress,
-            duration: 400, // Smooth transition between progress increments
-            useNativeDriver: false, // width cannot use native driver
-        }).start();
-    }, [progress]);
+  useEffect(() => {
+    Animated.timing(progressWidth, {
+      toValue: Math.max(0, Math.min(100, progress)),
+      duration: 360,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: false,
+    }).start();
+  }, [progress, progressWidth]);
 
-    return (
-        <Animated.View
-            style={[
-                styles.container,
-                {
-                    opacity: fadeAnim,
-                    transform: [{ translateY: slideAnim }]
-                }
-            ]}
-        >
-            <View style={styles.card}>
-                <View style={styles.contentRow}>
-                    <Text style={styles.label}>{label}</Text>
-                    <Text style={styles.percentage}>{Math.round(progress)}%</Text>
-                </View>
+  useEffect(() => {
+    if (!visible) {
+      rotateAnim.stopAnimation();
+      pulseAnim.stopAnimation();
+      shimmerAnim.stopAnimation();
+      return;
+    }
 
-                {/* Progress Track */}
-                <View style={styles.track}>
-                    {/* Progress Fill */}
-                    <Animated.View
-                        style={[
-                            styles.fill,
-                            {
-                                backgroundColor: themeColor,
-                                width: progressWidth.interpolate({
-                                    inputRange: [0, 100],
-                                    outputRange: ['0%', '100%'],
-                                }),
-                                // Adding a subtle glow to the bar
-                                shadowColor: themeColor,
-                                shadowOpacity: 0.5,
-                                shadowRadius: 5,
-                            }
-                        ]}
-                    />
-                </View>
-            </View>
-        </Animated.View>
+    const rotationLoop = Animated.loop(
+      Animated.timing(rotateAnim, {
+        toValue: 1,
+        duration: 2800,
+        easing: Easing.linear,
+        useNativeDriver: true,
+      }),
     );
+
+    const pulseLoop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulseAnim, {
+          toValue: 1.1,
+          duration: 1100,
+          easing: Easing.inOut(Easing.quad),
+          useNativeDriver: true,
+        }),
+        Animated.timing(pulseAnim, {
+          toValue: 0.9,
+          duration: 1100,
+          easing: Easing.inOut(Easing.quad),
+          useNativeDriver: true,
+        }),
+      ]),
+    );
+
+    const shimmerLoop = Animated.loop(
+      Animated.timing(shimmerAnim, {
+        toValue: 1,
+        duration: 1500,
+        easing: Easing.inOut(Easing.quad),
+        useNativeDriver: false,
+      }),
+    );
+
+    rotationLoop.start();
+    pulseLoop.start();
+    shimmerLoop.start();
+
+    return () => {
+      rotationLoop.stop();
+      pulseLoop.stop();
+      shimmerLoop.stop();
+      rotateAnim.setValue(0);
+      shimmerAnim.setValue(0);
+    };
+  }, [pulseAnim, rotateAnim, shimmerAnim, visible]);
+
+  const clampedProgress = Math.max(0, Math.min(100, progress));
+
+  const rotate = rotateAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: ['0deg', '360deg'],
+  });
+
+  const shimmerTranslate = shimmerAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: [-120, 320],
+  });
+
+  const percentageLabel = useMemo(() => `${Math.round(clampedProgress)}%`, [clampedProgress]);
+
+  if (!visible && clampedProgress <= 0) {
+    return null;
+  }
+
+  return (
+    <Animated.View
+      pointerEvents={visible ? 'auto' : 'none'}
+      style={[
+        styles.overlay,
+        {
+          opacity: overlayOpacity,
+        },
+      ]}
+    >
+      <Animated.View
+        style={[
+          styles.card,
+          {
+            transform: [{ translateY: cardTranslateY }, { scale: cardScale }],
+          },
+        ]}
+      >
+        <View style={styles.heroRow}>
+          <View style={styles.loaderDock}>
+            <Animated.View
+              style={[
+                styles.orbitRingOuter,
+                {
+                  borderColor: `${themeColor}35`,
+                  transform: [{ rotate }, { scale: pulseAnim }],
+                },
+              ]}
+            />
+            <Animated.View
+              style={[
+                styles.orbitRingInner,
+                {
+                  borderColor: `${themeColor}70`,
+                  transform: [{ rotate: rotate.interpolate({
+                    inputRange: [0, 1],
+                    outputRange: ['360deg', '0deg'],
+                  }) }],
+                },
+              ]}
+            />
+            <View style={[styles.loaderCore, { backgroundColor: `${themeColor}12` }]}>
+              <ActivityIndicator size="large" color={themeColor} />
+            </View>
+          </View>
+
+          <View style={styles.copyColumn}>
+            <Text style={styles.kicker}>Scrapiz Processing</Text>
+            <Text style={styles.label}>{label}</Text>
+            <Text style={styles.subtitle}>
+              {subtitle || 'Please keep this screen open while we complete the secure profile update.'}
+            </Text>
+          </View>
+        </View>
+
+        <View style={styles.progressMetaRow}>
+          <Text style={styles.progressCaption}>Live progress</Text>
+          <Text style={[styles.percentage, { color: themeColor }]}>{percentageLabel}</Text>
+        </View>
+
+        <View style={styles.track}>
+          <Animated.View
+            style={[
+              styles.fill,
+              {
+                backgroundColor: themeColor,
+                width: progressWidth.interpolate({
+                  inputRange: [0, 100],
+                  outputRange: ['0%', '100%'],
+                }),
+                shadowColor: themeColor,
+              },
+            ]}
+          >
+            <Animated.View
+              style={[
+                styles.shimmer,
+                {
+                  transform: [{ translateX: shimmerTranslate }],
+                },
+              ]}
+            />
+          </Animated.View>
+        </View>
+      </Animated.View>
+    </Animated.View>
+  );
 };
 
 const styles = StyleSheet.create({
-    container: {
-        position: 'absolute',
-        bottom: 40,
-        left: 20,
-        right: 20,
-        zIndex: 1000,
-    },
-    card: {
-        backgroundColor: '#FFFFFF',
-        borderRadius: 16,
-        padding: 16,
-        ...Platform.select({
-            ios: {
-                shadowColor: '#000',
-                shadowOffset: { width: 0, height: 10 },
-                shadowOpacity: 0.1,
-                shadowRadius: 20,
-            },
-            android: {
-                elevation: 10,
-            },
-        }),
-        borderWidth: 1,
-        borderColor: '#F1F1F1',
-    },
-    contentRow: {
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        marginBottom: 12,
-    },
-    label: {
-        fontSize: 14,
-        fontWeight: '700',
-        color: '#1F2937', // Slate 800
-        letterSpacing: -0.2,
-    },
-    percentage: {
-        fontSize: 12,
-        fontWeight: '800',
-        color: '#6B7280', // Slate 500
-        fontVariant: ['tabular-nums'], // Prevents jittering when numbers change
-    },
-    track: {
-        height: 6,
-        width: '100%',
-        backgroundColor: '#F3F4F6',
-        borderRadius: 10,
-        overflow: 'hidden',
-    },
-    fill: {
-        height: '100%',
-        borderRadius: 10,
-    },
+  overlay: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 1200,
+    backgroundColor: 'rgba(8, 15, 30, 0.28)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 20,
+  },
+  card: {
+    width: '100%',
+    maxWidth: 430,
+    borderRadius: 28,
+    paddingHorizontal: 22,
+    paddingVertical: 24,
+    backgroundColor: '#ffffff',
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    ...Platform.select({
+      ios: {
+        shadowColor: '#0f172a',
+        shadowOffset: { width: 0, height: 14 },
+        shadowOpacity: 0.18,
+        shadowRadius: 26,
+      },
+      android: {
+        elevation: 18,
+      },
+    }),
+  },
+  heroRow: {
+    flexDirection: 'row',
+    gap: 18,
+    alignItems: 'center',
+  },
+  loaderDock: {
+    width: 104,
+    height: 104,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  orbitRingOuter: {
+    position: 'absolute',
+    width: 104,
+    height: 104,
+    borderRadius: 52,
+    borderWidth: 2,
+    borderStyle: 'dashed',
+  },
+  orbitRingInner: {
+    position: 'absolute',
+    width: 82,
+    height: 82,
+    borderRadius: 41,
+    borderWidth: 2,
+  },
+  loaderCore: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  copyColumn: {
+    flex: 1,
+  },
+  kicker: {
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 1.2,
+    textTransform: 'uppercase',
+    color: '#16a34a',
+  },
+  label: {
+    marginTop: 6,
+    fontSize: 20,
+    lineHeight: 26,
+    fontWeight: '800',
+    color: '#0f172a',
+  },
+  subtitle: {
+    marginTop: 8,
+    fontSize: 14,
+    lineHeight: 20,
+    color: '#475569',
+  },
+  progressMetaRow: {
+    marginTop: 22,
+    marginBottom: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  progressCaption: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#64748b',
+  },
+  percentage: {
+    fontSize: 14,
+    fontWeight: '800',
+  },
+  track: {
+    width: '100%',
+    height: 12,
+    borderRadius: 999,
+    backgroundColor: '#e2e8f0',
+    overflow: 'hidden',
+  },
+  fill: {
+    height: '100%',
+    borderRadius: 999,
+    overflow: 'hidden',
+    shadowOpacity: 0.45,
+    shadowRadius: 10,
+  },
+  shimmer: {
+    position: 'absolute',
+    top: 0,
+    bottom: 0,
+    width: '34%',
+    backgroundColor: 'rgba(255,255,255,0.28)',
+    borderRadius: 999,
+  },
 });
 
 export default ProgressSnackbar;

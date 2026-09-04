@@ -4,6 +4,7 @@ import {
   Alert,
   Animated,
   Dimensions,
+  Modal,
   ScrollView,
   StatusBar,
   StyleSheet,
@@ -14,6 +15,7 @@ import {
 import { Ionicons, MaterialIcons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import RazorpayCheckout from 'react-native-razorpay';
+import { isVendorReviewMode } from '../../config/reviewMode';
 import { ApiHttpError, ApiService, PlanResponse } from '../../services/api';
 
 interface SubscriptionScreenProps {
@@ -123,11 +125,15 @@ const getPerMonthAmount = (amount: number, days: number): number => {
 };
 
 export default function SubscriptionScreen({ onBack, onShowToast }: SubscriptionScreenProps) {
+  const reviewModeEnabled = isVendorReviewMode();
   const [planData, setPlanData] = useState<PlanResponse | null>(null);
   const [selectedPlanCode, setSelectedPlanCode] = useState<string | null>(null);
   const [billingView, setBillingView] = useState<BillingView>('annual');
   const [isLoading, setIsLoading] = useState(true);
   const [isPurchasing, setIsPurchasing] = useState(false);
+  const [showPaymentChooser, setShowPaymentChooser] = useState(false);
+  const [walletBalance, setWalletBalance] = useState<number | null>(null);
+  const [walletLoading, setWalletLoading] = useState(false);
   const [entryAnim] = useState(new Animated.Value(0));
 
   const loadPlan = async () => {
@@ -150,6 +156,34 @@ export default function SubscriptionScreen({ onBack, onShowToast }: Subscription
   }, []);
 
   useEffect(() => {
+    let mounted = true;
+
+    const loadWallet = async () => {
+      setWalletLoading(true);
+      try {
+        const response = await ApiService.getVendorWallet();
+        if (mounted) {
+          setWalletBalance(Number(response.balance || 0));
+        }
+      } catch {
+        if (mounted) {
+          setWalletBalance(null);
+        }
+      } finally {
+        if (mounted) {
+          setWalletLoading(false);
+        }
+      }
+    };
+
+    loadWallet();
+
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  useEffect(() => {
     Animated.timing(entryAnim, {
       toValue: 1,
       duration: 640,
@@ -169,6 +203,19 @@ export default function SubscriptionScreen({ onBack, onShowToast }: Subscription
       setIsPurchasing(true);
       const order = await ApiService.createSubscriptionOrder(selectedPlan.code);
 
+      if (reviewModeEnabled) {
+        const verifyResult = await ApiService.verifySubscriptionPayment({
+          razorpay_payment_id: `review-sub-payment-${Date.now()}`,
+          razorpay_order_id: order.order_id,
+          razorpay_signature: 'review-signature',
+        });
+        Alert.alert('Subscription Activated', verifyResult.message || 'Your plan is active now.');
+        await loadPlan();
+        const refreshedWallet = await ApiService.getVendorWallet();
+        setWalletBalance(Number(refreshedWallet.balance || 0));
+        return;
+      }
+
       const paymentResult = await RazorpayCheckout.open({
         key: order.key,
         amount: Math.round(Number(order.amount.total) * 100),
@@ -176,9 +223,6 @@ export default function SubscriptionScreen({ onBack, onShowToast }: Subscription
         order_id: order.order_id,
         name: 'Scrapiz Vendor',
         description: `${order.plan.name} subscription`,
-        notes: {
-          plan_code: order.plan.code,
-        },
         theme: {
           color: '#1D4ED8',
         },
@@ -222,7 +266,35 @@ export default function SubscriptionScreen({ onBack, onShowToast }: Subscription
   const selectedAmount = Number(selectedPlan?.amount || 0);
   const selectedDays = Number(selectedPlan?.duration_days || 30);
   const selectedMonthly = getPerMonthAmount(selectedAmount, selectedDays);
+  const canPayFromWallet = walletBalance !== null && walletBalance >= selectedAmount;
   const cardWidth = Math.min(width - 32, 420);
+
+  const handlePayFromWallet = async () => {
+    if (!selectedPlan || isPurchasing) return;
+
+    if (!canPayFromWallet) {
+      Alert.alert('Insufficient balance', 'Add money to your wallet or use Razorpay to continue.');
+      return;
+    }
+
+    try {
+      setIsPurchasing(true);
+      const result = await ApiService.paySubscriptionFromWallet(selectedPlan.code);
+      Alert.alert('Subscription Activated', result.message || 'Your plan is active now.');
+      setShowPaymentChooser(false);
+      await loadPlan();
+      const refreshedWallet = await ApiService.getVendorWallet();
+      setWalletBalance(Number(refreshedWallet.balance || 0));
+    } catch (error: any) {
+      if (error instanceof ApiHttpError) {
+        Alert.alert('Payment failed', error.message);
+      } else {
+        Alert.alert('Payment failed', error?.message || 'Please try again.');
+      }
+    } finally {
+      setIsPurchasing(false);
+    }
+  };
 
   return (
     <View style={styles.root}>
@@ -379,7 +451,7 @@ export default function SubscriptionScreen({ onBack, onShowToast }: Subscription
                   </View>
 
                   <TouchableOpacity
-                    onPress={handleBuyPlan}
+                    onPress={() => setShowPaymentChooser(true)}
                     disabled={isPurchasing}
                     style={styles.cardCtaButton}
                     activeOpacity={0.9}
@@ -410,6 +482,63 @@ export default function SubscriptionScreen({ onBack, onShowToast }: Subscription
             </Animated.View>
           </ScrollView>
         )}
+
+        <Modal
+          visible={showPaymentChooser}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setShowPaymentChooser(false)}
+        >
+          <View style={styles.modalBackdrop}>
+            <View style={styles.paymentSheet}>
+              <View style={styles.sheetHandle} />
+              <Text style={styles.sheetTitle}>Choose payment method</Text>
+              <Text style={styles.sheetSubtitle}>
+                {selectedPlan?.name || 'Selected plan'} will be activated after payment confirmation.
+              </Text>
+
+              <View style={styles.balanceCard}>
+                <Text style={styles.balanceLabel}>Available wallet balance</Text>
+                <Text style={styles.balanceValue}>
+                  {walletLoading
+                    ? 'Loading…'
+                    : walletBalance === null
+                      ? 'Unavailable'
+                      : `₹${walletBalance.toLocaleString('en-IN')}`}
+                </Text>
+                <Text style={styles.balanceHint}>
+                  {canPayFromWallet
+                    ? 'Wallet balance is enough for this plan.'
+                    : 'Wallet balance is not enough for this plan.'}
+                </Text>
+              </View>
+
+              <TouchableOpacity
+                style={[styles.walletOptionButton, !canPayFromWallet && styles.walletOptionButtonDisabled]}
+                onPress={handlePayFromWallet}
+                disabled={!canPayFromWallet || isPurchasing}
+              >
+                {isPurchasing ? <ActivityIndicator color="#FFFFFF" size="small" /> : null}
+                <Text style={styles.walletOptionText}>Pay from Wallet</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.razorpayOptionButton}
+                onPress={async () => {
+                  setShowPaymentChooser(false);
+                  await handleBuyPlan();
+                }}
+                disabled={isPurchasing}
+              >
+                <Text style={styles.razorpayOptionText}>Pay with GPay / PhonePe / Card</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity onPress={() => setShowPaymentChooser(false)} style={styles.cancelLink}>
+                <Text style={styles.cancelLinkText}>Cancel</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </Modal>
       </SafeAreaView>
     </View>
   );
@@ -778,5 +907,99 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     padding: 16,
     backgroundColor: 'rgba(255,255,255,0.12)',
+  },
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(2, 6, 23, 0.55)',
+    justifyContent: 'flex-end',
+  },
+  paymentSheet: {
+    backgroundColor: '#F8FAFC',
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    paddingHorizontal: 18,
+    paddingTop: 10,
+    paddingBottom: 22,
+    gap: 12,
+  },
+  sheetHandle: {
+    alignSelf: 'center',
+    width: 52,
+    height: 5,
+    borderRadius: 999,
+    backgroundColor: '#CBD5E1',
+  },
+  sheetTitle: {
+    color: '#0F172A',
+    fontSize: 20,
+    fontWeight: '800',
+  },
+  sheetSubtitle: {
+    color: '#64748B',
+    lineHeight: 20,
+  },
+  balanceCard: {
+    borderRadius: 20,
+    backgroundColor: '#0F2F25',
+    padding: 16,
+    gap: 4,
+  },
+  balanceLabel: {
+    color: 'rgba(255,255,255,0.7)',
+    fontSize: 12,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    letterSpacing: 0.4,
+  },
+  balanceValue: {
+    color: '#FFFFFF',
+    fontSize: 28,
+    fontWeight: '800',
+  },
+  balanceHint: {
+    color: 'rgba(255,255,255,0.75)',
+    fontSize: 13,
+  },
+  walletOptionButton: {
+    minHeight: 52,
+    borderRadius: 18,
+    backgroundColor: '#15803D',
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexDirection: 'row',
+    gap: 10,
+  },
+  walletOptionButtonDisabled: {
+    backgroundColor: '#94A3B8',
+  },
+  walletOptionText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '800',
+  },
+  razorpayOptionButton: {
+    minHeight: 52,
+    borderRadius: 18,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#CBD5E1',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 14,
+  },
+  razorpayOptionText: {
+    color: '#0F172A',
+    fontSize: 15,
+    fontWeight: '800',
+    textAlign: 'center',
+  },
+  cancelLink: {
+    alignSelf: 'center',
+    paddingVertical: 6,
+  },
+  cancelLinkText: {
+    color: '#64748B',
+    fontSize: 14,
+    fontWeight: '700',
   },
 });
