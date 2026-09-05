@@ -54,7 +54,6 @@ export default {
     },
     plugins: [
       "expo-notifications",
-      "expo-barcode-scanner",
       "expo-secure-store",
       "expo-tracking-transparency",
       [
