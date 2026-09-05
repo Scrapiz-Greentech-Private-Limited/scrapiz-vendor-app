@@ -25,13 +25,14 @@ const BottomNavigation = ({ activeTab, onTabChange, jobCounts }: BottomNavigatio
   
   const tabs: { key: string; label: string; icon: string; badge?: number }[] = [
     { key: 'home', label: 'Home', icon: 'home' },
-    { 
-      key: 'manage', 
-      label: 'Manage', 
+    {
+      key: 'manage',
+      label: 'Manage',
       icon: 'work',
       badge: (jobCounts?.active || 0) + (jobCounts?.pending || 0) + (jobCounts?.upcoming || 0),
     },
-    { key: 'message', label: 'Message', icon: 'message' },
+    { key: 'message', label: 'Message', icon: 'chat-bubble-outline' },
+    { key: 'learning', label: 'Learning', icon: 'menu-book' },
     { key: 'profile', label: 'Profile', icon: 'person' },
   ];
 
@@ -61,13 +62,13 @@ const BottomNavigation = ({ activeTab, onTabChange, jobCounts }: BottomNavigatio
               <View
                 style={[
                   styles.iconContainer,
-                  isActive && { backgroundColor: palette.primary, shadowColor: palette.primary },
+                  isActive && styles.activeIconContainer,
                 ]}
               >
                 <MaterialIcons
                   name={tab.icon as any}
                   size={22}
-                  color={isActive ? palette.primaryText : palette.textMuted}
+                  color={isActive ? '#1B4332' : palette.textMuted}
                 />
                 {tab.badge && tab.badge > 0 && (
                   <View style={styles.badge}>
@@ -80,7 +81,7 @@ const BottomNavigation = ({ activeTab, onTabChange, jobCounts }: BottomNavigatio
               <Text
                 style={[
                   styles.label,
-                  { color: isActive ? palette.primary : palette.textMuted },
+                  { color: isActive ? '#1B4332' : palette.textMuted },
                   isActive && styles.activeLabel,
                 ]}
               >
@@ -109,10 +110,11 @@ const styles = StyleSheet.create({
   tabContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 12,
-    paddingVertical: 10,
+    paddingHorizontal: 8,
+    paddingVertical: 8,
     borderRadius: 28,
     borderWidth: 1,
+    backgroundColor: '#FFFFFF',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 10 },
     shadowOpacity: 0.12,
@@ -123,8 +125,9 @@ const styles = StyleSheet.create({
   tab: {
     alignItems: 'center',
     justifyContent: 'center',
-    paddingHorizontal: 8,
-    minWidth: 54,
+    paddingHorizontal: 6,
+    minWidth: 58,
+    flex: 1,
   },
   
   activeTab: {
@@ -137,7 +140,10 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     width: 36,
     height: 36,
-    borderRadius: 18,
+    borderRadius: 12,
+  },
+  activeIconContainer: {
+    backgroundColor: '#D8F3DC',
   },
   badge: {
     position: 'absolute',

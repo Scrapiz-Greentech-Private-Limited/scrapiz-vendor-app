@@ -78,70 +78,27 @@ type ThemeContextValue = {
 const ThemeContext = createContext<ThemeContextValue | undefined>(undefined);
 
 export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const systemColorScheme = Appearance.getColorScheme();
-  const [theme, setThemeState] = useState<ThemeMode>(systemColorScheme === 'dark' ? 'dark' : 'light');
-  const [hasLoadedPreference, setHasLoadedPreference] = useState(false);
+  const [theme] = useState<ThemeMode>('light');
 
   useEffect(() => {
-    let mounted = true;
-
-    const loadTheme = async () => {
-      try {
-        const storedTheme = await AsyncStorage.getItem(THEME_STORAGE_KEY);
-        if (!mounted) {
-          return;
-        }
-
-        if (storedTheme === 'light' || storedTheme === 'dark') {
-          setThemeState(storedTheme);
-          Appearance.setColorScheme(storedTheme);
-        } else {
-          const fallbackTheme = Appearance.getColorScheme() === 'dark' ? 'dark' : 'light';
-          setThemeState(fallbackTheme);
-          Appearance.setColorScheme(null);
-        }
-      } catch {
-        if (mounted) {
-          const fallbackTheme = Appearance.getColorScheme() === 'dark' ? 'dark' : 'light';
-          setThemeState(fallbackTheme);
-        }
-      } finally {
-        if (mounted) {
-          setHasLoadedPreference(true);
-        }
-      }
-    };
-
-    void loadTheme();
-
-    return () => {
-      mounted = false;
-    };
+    Appearance.setColorScheme('light');
+    void AsyncStorage.setItem(THEME_STORAGE_KEY, 'light');
   }, []);
 
-  useEffect(() => {
-    if (!hasLoadedPreference) {
-      return;
-    }
-
-    Appearance.setColorScheme(theme);
-  }, [hasLoadedPreference, theme]);
-
-  const setTheme = async (nextTheme: ThemeMode) => {
-    setThemeState(nextTheme);
-    Appearance.setColorScheme(nextTheme);
-    await AsyncStorage.setItem(THEME_STORAGE_KEY, nextTheme);
+  const setTheme = async (_nextTheme: ThemeMode) => {
+    Appearance.setColorScheme('light');
+    await AsyncStorage.setItem(THEME_STORAGE_KEY, 'light');
   };
 
   const toggleTheme = async () => {
-    await setTheme(theme === 'dark' ? 'light' : 'dark');
+    await setTheme('light');
   };
 
   const value = useMemo(
     () => ({
       theme,
-      isDark: theme === 'dark',
-      palette: palettes[theme],
+      isDark: false,
+      palette: palettes.light,
       setTheme,
       toggleTheme,
     }),

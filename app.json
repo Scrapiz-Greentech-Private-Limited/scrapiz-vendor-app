@@ -6,7 +6,7 @@
     "orientation": "portrait",
     "icon": "./assets/images/image_splashScreen_green.jpg",
     "scheme": "scrapizvendorapp",
-    "userInterfaceStyle": "automatic",
+    "userInterfaceStyle": "light",
     "newArchEnabled": true,
     "ios": {
       "supportsTablet": true
@@ -78,7 +78,8 @@
             
       }],
       
-      "expo-localization" 
+      "expo-localization",
+      "expo-video" 
 
     ],
     "experiments": {

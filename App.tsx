@@ -1,6 +1,6 @@
 import { NavigationContainer } from '@react-navigation/native';
 import { PostHogProvider, usePostHog } from 'posthog-react-native';
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, StatusBar, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import * as Location from 'expo-location';
@@ -13,6 +13,7 @@ import { LanguageProvider } from './src/utils/i18n';
 import { OTPVerify, Signup, SimpleLogin } from './src/screens/auth';
 // Main Screens
 import { BillsScreen, Dashboard, EarningsScreen, ManageScreen, PurchaseBillDetailScreen } from './src/screens/main';
+import { LearningHubScreen, ReelPlayerScreen } from './src/screens/learning';
 
 // Message Screens
 import { MessageScreen } from './src/screens/messages';
@@ -273,6 +274,7 @@ const AppContent = () => {
   } | null>(null);
   const posthogClient = usePostHog();
   const [activeTab, setActiveTab] = useState('home');
+  const reelReturnTab = useRef('home');
   const [selectedBooking, setSelectedBooking] = useState<BookingRequest | null>(null);
   const [selectedRequestItem, setSelectedRequestItem] = useState<any>(null);
   const [selectedDutySession, setSelectedDutySession] = useState<DutySession | null>(null);
@@ -461,6 +463,9 @@ const AppContent = () => {
 
   const handleNavigate = (screen: string, params?: any) => {
     const nextScreen = screen === 'more-menu' || screen === 'settings' ? 'profile' : screen;
+    if (nextScreen === 'learning-reel') {
+      reelReturnTab.current = activeTab === 'learning' ? 'learning' : 'home';
+    }
     trackVendorNavigation(screen, {
       has_request: Boolean(params?.request),
       has_session: Boolean(params?.session),
@@ -1007,6 +1012,18 @@ const AppContent = () => {
             onCompleteOnboarding={() => setOnboardingStep('face')}
           />
         );
+      case 'learning':
+        return (
+          <LearningHubScreen
+            onBack={handleBackToHome}
+            onOpenReel={() => {
+              reelReturnTab.current = 'learning';
+              setActiveTab('learning-reel');
+            }}
+          />
+        );
+      case 'learning-reel':
+        return <ReelPlayerScreen onBack={() => setActiveTab(reelReturnTab.current)} />;
       case 'earnings':
         return <EarningsScreen onBack={handleBackToHome} />;
       case 'manage':
@@ -1345,14 +1362,14 @@ const AppContent = () => {
   return (
     <View style={styles.container}>
       <StatusBar 
-        backgroundColor="#1B7332" 
-        barStyle="light-content" 
+        backgroundColor="#F4F7F5" 
+        barStyle="dark-content" 
         translucent={false}
       />
       {renderContent()}
       
       {/* Show bottom navigation except on active job, completion, wallet payment flow, subscription, and materials screens */}
-      {activeTab !== 'active-job' && activeTab !== 'job-completion' && activeTab !== 'job-completed' && activeTab !== 'add-money' && activeTab !== 'payment-method' && activeTab !== 'payment-success' && activeTab !== 'subscription' && activeTab !== 'materials' && activeTab !== 'select-material' && activeTab !== 'booking-details' && activeTab !== 'pickup-assessment' && activeTab !== 'edit-profile' && activeTab !== 'personal-info' && activeTab !== 'ratings-hub' && activeTab !== 'customer-review-flow' && !showJobCompletion && (
+      {activeTab !== 'active-job' && activeTab !== 'job-completion' && activeTab !== 'job-completed' && activeTab !== 'add-money' && activeTab !== 'payment-method' && activeTab !== 'payment-success' && activeTab !== 'subscription' && activeTab !== 'materials' && activeTab !== 'select-material' && activeTab !== 'booking-details' && activeTab !== 'pickup-assessment' && activeTab !== 'edit-profile' && activeTab !== 'personal-info' && activeTab !== 'ratings-hub' && activeTab !== 'customer-review-flow' && activeTab !== 'learning-reel' && !showJobCompletion && (
         <BottomNavigation
           activeTab={activeTab}
           onTabChange={setActiveTab}

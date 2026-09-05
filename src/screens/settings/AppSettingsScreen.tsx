@@ -57,7 +57,6 @@ const AppSettingsScreen = ({ onBack, onShowToast }: AppSettingsScreenProps) => {
   };
 
   const settingsOptions = [
-    { key: 'darkMode', label: 'Dark Mode', icon: 'dark-mode', description: 'Use dark theme' },
     { key: 'notifications', label: 'Notifications', icon: 'notifications', description: 'Receive push notifications' },
     { key: 'autoSync', label: 'Auto Sync', icon: 'sync', description: 'Automatically sync data' },
     { key: 'offlineMode', label: 'Offline Mode', icon: 'wifi-off', description: 'Enable offline functionality' },

@@ -15,13 +15,15 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '../../../hooks/useAuth';
 import { BookingCardSkeleton } from '../../components/ui/SkeletonLoader';
 import { ApiHttpError, ApiService } from '../../services/api';
 import { HapticService } from '../../services/hapticService';
 import { vendorLeadSocketService } from '../../services/vendorLeadSocket';
 import { vendorLocationStreamer } from '../../services/vendorLocationStreamer';
+import { HOME } from './home/homeTheme';
+import PartnerHomeContent, { HomePeriod, PartnerHomeMetrics } from './home/PartnerHomeContent';
 import { buildFallbackBookings, isFallbackAppTestingEnabled } from '../jobs/fallbackPickupData';
 import { BookingRequest } from '../../types';
 import { useLanguage } from '../../utils/i18n';
@@ -42,15 +44,20 @@ const LEAD_POLL_INTERVAL_MS = 10000;
 export default function Dashboard({ onBookingSelect, onNavigate, onShowToast, hasActiveBooking = false, onOpenActiveBooking, onCompleteOnboarding }: DashboardProps) {
   const { user, setOnlineStatus } = useAuth();
   const { t } = useLanguage();
-  const { palette, theme, setTheme } = useAppTheme();
+  const { palette } = useAppTheme();
   const posthog = usePostHog();
-  const insets = useSafeAreaInsets();
   const [isOnline, setIsOnline] = useState(user?.isOnline || false);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isToggling, setIsToggling] = useState(false);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [bookings, setBookings] = useState<BookingRequest[]>([]);
   const [processedBookings, setProcessedBookings] = useState<string[]>([]);
+  const [period, setPeriod] = useState<HomePeriod>('this_month');
+  const [homeMetrics, setHomeMetrics] = useState<PartnerHomeMetrics>({
+    leadsHandled: 0,
+    revenueGenerated: 0,
+    partnerRating: Number(user?.performanceRating || 0),
+  });
   const [fadeAnim] = useState(new Animated.Value(0));
   const [slideAnim] = useState(new Animated.Value(30));
   const [drawerAnim] = useState(new Animated.Value(-340));
@@ -58,39 +65,25 @@ export default function Dashboard({ onBookingSelect, onNavigate, onShowToast, ha
 
   const needsOnboarding = user?.hasVendorProfile && user.vendorStatus === 'draft';
   const formatAmount = (amount: number) => `₹${Math.round(amount).toLocaleString('en-IN')}`;
-  const dashboardSubline = useMemo(() => {
-    if (user?.vendorStatus === 'pending_verification') {
-      return 'Verification pending';
-    }
-    if (user?.vendorStatus === 'approved') {
-      return user?.vehicleNumber || 'Ready for live pickups';
-    }
-    if (user?.hasVendorProfile) {
-      return 'Onboarding in progress';
-    }
-    return 'Vendor setup pending';
-  }, [user?.hasVendorProfile, user?.vendorStatus, user?.vehicleNumber]);
 
   const menuItems = useMemo(
     () => [
       { key: 'home', label: 'Home', icon: 'home', action: () => onNavigate('home') },
-      {
-        key: 'theme',
-        label: `Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`,
-        icon: theme === 'dark' ? 'light-mode' : 'dark-mode',
-        action: () => {
-          const nextTheme = theme === 'dark' ? 'light' : 'dark';
-          void setTheme(nextTheme);
-          onShowToast(`Switched to ${nextTheme} mode.`, 'success');
+        {
+          key: 'theme',
+          label: 'Light mode',
+          icon: 'light-mode',
+          action: () => {
+            onShowToast('Light mode is always on.', 'info');
+          },
         },
-      },
       { key: 'subscription', label: 'Subscriptions', icon: 'star', action: () => onNavigate('subscription') },
       { key: 'credit', label: 'Add to Wallet', icon: 'account-balance-wallet', action: () => onNavigate('credit') },
       { key: 'contacts', label: 'Contacts', icon: 'contacts', action: () => onNavigate('contacts') },
       { key: 'bills', label: 'Bills', icon: 'receipt', action: () => onNavigate('bills') },
       { key: 'personal-info', label: 'Personal Information', icon: 'person', action: () => onNavigate('personal-info') },
     ],
-    [onNavigate, onShowToast, setTheme, theme],
+    [onNavigate, onShowToast],
   );
 
   useEffect(() => {
@@ -168,9 +161,41 @@ export default function Dashboard({ onBookingSelect, onNavigate, onShowToast, ha
     }
   }, [fallbackTestingEnabled, loadFallbackBookings]);
 
+  const loadHomeMetrics = useCallback(async (selectedPeriod: HomePeriod) => {
+    const dutyPeriod = selectedPeriod === 'this_week' ? 'this_week' : selectedPeriod === 'all_time' ? 'all_time' : 'last_month';
+    try {
+      const [sessionsRes, profile] = await Promise.all([
+        ApiService.getDutySessions(dutyPeriod).catch(() => ({ sessions: [], total_sessions: 0 })),
+        ApiService.getVendorProfile().catch(() => null),
+      ]);
+      const sessions = sessionsRes.sessions || [];
+      const leadsHandled = sessions.reduce((sum, session) => {
+        return sum + Number(session.booking_summary?.completed_bookings ?? session.orders_completed ?? 0);
+      }, 0);
+      const revenueGenerated = sessions.reduce((sum, session) => {
+        const fromBookings = (session.bookings || []).reduce((inner, booking) => {
+          const payout = Number(booking.bill?.total_payout ?? booking.quote?.total_amount ?? booking.total_payout ?? 0);
+          return inner + (Number.isFinite(payout) ? payout : 0);
+        }, 0);
+        return sum + fromBookings;
+      }, 0);
+      setHomeMetrics({
+        leadsHandled,
+        revenueGenerated,
+        partnerRating: Number(profile?.performance_rating ?? user?.performanceRating ?? 0),
+      });
+    } catch (error) {
+      console.warn('Failed to load partner home metrics', error);
+    }
+  }, [user?.performanceRating]);
+
   useEffect(() => {
     loadBookings();
   }, [loadBookings]);
+
+  useEffect(() => {
+    void loadHomeMetrics(period);
+  }, [loadHomeMetrics, period]);
 
   useEffect(() => {
     if (!isOnline) {
@@ -277,43 +302,19 @@ export default function Dashboard({ onBookingSelect, onNavigate, onShowToast, ha
     }
     setIsRefreshing(true);
     try {
-      await loadBookings();
-      onShowToast('Bookings refreshed!', 'success');
+      await Promise.all([loadBookings(), loadHomeMetrics(period)]);
+      onShowToast('Dashboard refreshed', 'success');
     } catch {
       onShowToast('Failed to refresh bookings', 'error');
     } finally {
       setIsRefreshing(false);
     }
-  }, [isRefreshing, loadBookings, onShowToast]);
+  }, [isRefreshing, loadBookings, loadHomeMetrics, onShowToast, period]);
 
   const visibleBookings = useMemo(
     () => bookings.filter((booking) => !processedBookings.includes(booking.id)),
     [bookings, processedBookings],
   );
-
-  const dashboardMetrics = useMemo(() => {
-    const totalOrders = Math.max(visibleBookings.length + processedBookings.length + (isOnline ? 9 : 5), 12);
-    const monthlyRevenue = bookings.reduce((sum, booking) => sum + (booking.estimatedAmount || 0), 0);
-    const totalIncome = monthlyRevenue > 0 ? monthlyRevenue + totalOrders * 380 : totalOrders * 1240;
-
-    return {
-      totalOrders,
-      totalIncome,
-      averageOrderValue: Math.round(totalIncome / Math.max(totalOrders, 1)),
-    };
-  }, [bookings, isOnline, processedBookings.length, visibleBookings.length]);
-
-  const monthlyTrend = useMemo(() => {
-    const seed = Math.max(visibleBookings.length, 2);
-    return [
-      { label: 'Jan', value: seed + 2 },
-      { label: 'Feb', value: seed + 4 },
-      { label: 'Mar', value: seed + 3 },
-      { label: 'Apr', value: seed + 6 },
-      { label: 'May', value: seed + 5 },
-      { label: 'Jun', value: seed + (isOnline ? 7 : 4) },
-    ];
-  }, [isOnline, visibleBookings.length]);
 
   const getPriorityColor = (priority: string) => {
     switch (priority) {
@@ -378,114 +379,24 @@ export default function Dashboard({ onBookingSelect, onNavigate, onShowToast, ha
         </View>
       </Modal>
 
-      <SafeAreaView style={{ flex: 1, backgroundColor: palette.background }} edges={['top', 'left', 'right']}>
-      <StatusBar backgroundColor={palette.background} barStyle={theme === 'dark' ? 'light-content' : 'dark-content'} />
+      <SafeAreaView style={{ flex: 1, backgroundColor: HOME.bg }} edges={['top', 'left', 'right']}>
+      <StatusBar backgroundColor={HOME.bg} barStyle="dark-content" />
       <ScrollView
         className="flex-1"
-        contentContainerStyle={{ flexGrow: 1 }}
+        contentContainerStyle={{ flexGrow: 1, paddingTop: 8, paddingBottom: 140 }}
         refreshControl={
           <RefreshControl
             refreshing={isRefreshing}
             onRefresh={handleRefresh}
-            colors={[palette.primary]}
-            tintColor={palette.primary}
-            progressBackgroundColor={palette.background}
+            colors={[HOME.green]}
+            tintColor={HOME.green}
+            progressBackgroundColor={HOME.bg}
           />
         }
         showsVerticalScrollIndicator={false}
       >
-        <View
-          className="px-4 pb-7 rounded-b-[36px] overflow-hidden"
-          style={{ backgroundColor: palette.primary, paddingTop: Math.max(insets.top, 12) }}
-        >
-          <View
-            style={{
-              position: 'absolute',
-              top: 36,
-              right: -30,
-              width: 170,
-              height: 170,
-              borderRadius: 85,
-              backgroundColor: 'rgba(255,255,255,0.08)',
-            }}
-          />
-          <View
-            style={{
-              position: 'absolute',
-              top: 112,
-              left: -42,
-              width: 120,
-              height: 120,
-              borderRadius: 60,
-              backgroundColor: 'rgba(255,255,255,0.06)',
-            }}
-          />
-
-          <View className="flex-row items-center justify-between mb-5">
-            <View>
-              <Text className="text-white/75 text-[13px] font-medium">Vendor dashboard</Text>
-              <Text className="text-white text-[30px] font-black mt-1">Homepage</Text>
-            </View>
-
-            <View className="flex-row items-center">
-              <TouchableOpacity
-                onPress={openMenu}
-                className="w-11 h-11 rounded-2xl bg-white/12 items-center justify-center mr-3"
-                activeOpacity={0.85}
-              >
-                <MaterialIcons name="menu" size={24} color="white" />
-              </TouchableOpacity>
-              <View className="w-12 h-12 rounded-full bg-white overflow-hidden items-center justify-center border border-white/25">
-                {user?.image || user?.profileImage ? (
-                  <Image source={{ uri: (user?.image || user?.profileImage) as string }} className="w-full h-full" />
-                ) : (
-                  <MaterialIcons name="person" size={28} color="#1B7332" />
-                )}
-              </View>
-            </View>
-          </View>
-
-          <View className="flex-row items-center justify-between rounded-[28px] bg-white/12 px-4 py-4 mb-4">
-            <View className="flex-row items-center flex-1 pr-3">
-              <View className="w-14 h-14 rounded-[20px] bg-white/12 justify-center items-center mr-3">
-                <MaterialIcons name="local-shipping" size={28} color="white" />
-              </View>
-              <View className="flex-1">
-                <Text className="text-[20px] text-white font-black" numberOfLines={1}>
-                  {user?.name || 'Vendor'}
-                </Text>
-                <Text className="text-[13px] text-white/80 mt-1" numberOfLines={1}>
-                  {user?.serviceCity || 'Mumbai'} • {dashboardSubline}
-                </Text>
-              </View>
-            </View>
-
-            <TouchableOpacity
-              onPress={handleToggleOnline}
-              disabled={isToggling}
-              className={`px-4 py-2 rounded-full ${isOnline ? 'bg-[#4CAF50]' : 'bg-[#6B7280]'} ${isToggling ? 'opacity-70' : ''}`}
-            >
-              <Text className="text-[13px] font-bold text-white">{isOnline ? 'ONLINE' : 'OFFLINE'}</Text>
-            </TouchableOpacity>
-          </View>
-
-          <View className="flex-row gap-x-3">
-            <View className="flex-1 rounded-[22px] bg-white px-4 py-4">
-              <Text className="text-[12px] font-semibold text-[#64748B]">Total orders received</Text>
-              <Text className="text-[24px] font-black text-[#0F172A] mt-2">{dashboardMetrics.totalOrders}</Text>
-              <Text className="text-[12px] font-semibold text-[#1B7332] mt-1">This month</Text>
-            </View>
-            <View className="flex-1 rounded-[22px] bg-white px-4 py-4">
-              <Text className="text-[12px] font-semibold text-[#64748B]">Total income</Text>
-              <Text className="text-[24px] font-black text-[#0F172A] mt-2">{formatAmount(dashboardMetrics.totalIncome)}</Text>
-              <Text className="text-[12px] font-semibold text-[#1B7332] mt-1">Avg {formatAmount(dashboardMetrics.averageOrderValue)}</Text>
-            </View>
-          </View>
-        </View>
-
-        <View className="flex-1 px-4 pt-4 pb-40">
           {needsOnboarding && !isOnline && (
-            <View className="mb-4 rounded-[24px] p-5 bg-gradient-to-br from-[#FEF3C7] to-[#FDE68A] border-2 border-[#F59E0B]">
+            <View className="mx-5 mb-4 rounded-[24px] p-5 bg-gradient-to-br from-[#FEF3C7] to-[#FDE68A] border-2 border-[#F59E0B]">
               <View className="flex-row items-start mb-3">
                 <View className="w-12 h-12 rounded-full bg-[#F59E0B] justify-center items-center mr-3">
                   <MaterialIcons name="assignment" size={24} color="white" />
@@ -523,48 +434,24 @@ export default function Dashboard({ onBookingSelect, onNavigate, onShowToast, ha
             </View>
           )}
 
-          <View className="mb-6 rounded-[30px] bg-white border border-[#E5E7EB] p-5">
-            <View className="flex-row items-center justify-between mb-4">
-              <View>
-                <Text className="text-[13px] font-semibold text-[#64748B]">Orders overview</Text>
-                <Text className="text-[24px] font-black text-[#0F172A] mt-1">{formatAmount(dashboardMetrics.totalIncome)}</Text>
-              </View>
-              <View className="rounded-full bg-[#F3F9F4] px-3 py-1.5">
-                <Text className="text-[12px] font-bold text-[#1B7332]">Month wise</Text>
-              </View>
-            </View>
+        <PartnerHomeContent
+          vendorName={user?.name || 'Partner'}
+          vendorImage={user?.image || user?.profileImage}
+          locationLabel={[user?.serviceArea, user?.serviceCity].filter(Boolean).join(', ') || 'Location pending'}
+          isOnline={isOnline}
+          isToggling={isToggling}
+          metrics={homeMetrics}
+          period={period}
+          onPeriodChange={setPeriod}
+          onToggleOnline={handleToggleOnline}
+          onOpenLearning={() => onNavigate('learning')}
+          onOpenReel={() => onNavigate('learning-reel')}
+          onOpenLeads={() => onNavigate('history')}
+          onOpenRevenue={() => onNavigate('earnings')}
+          onOpenRating={() => onNavigate('ratings-hub')}
+          onOpenMenu={openMenu}
+          liveBookings={isOnline ? (
 
-            <View className="flex-row items-end justify-between h-[150px] mb-3">
-              {monthlyTrend.map((point, index) => {
-                const height = 42 + point.value * 9;
-                const isHighlight = index === monthlyTrend.length - 2;
-                return (
-                  <View key={point.label} className="items-center flex-1">
-                    <View
-                      style={{ height, backgroundColor: isHighlight ? palette.primary : '#DCE5DD', width: 24 }}
-                      className="rounded-t-full rounded-b-[10px]"
-                    />
-                    <Text className="text-[11px] text-[#64748B] mt-3">{point.label}</Text>
-                  </View>
-                );
-              })}
-            </View>
-
-            <View className="flex-row justify-between">
-              <View>
-                <Text className="text-[12px] text-[#64748B]">Orders received</Text>
-                <Text className="text-[18px] font-black text-[#0F172A] mt-1">{dashboardMetrics.totalOrders}</Text>
-              </View>
-              <View>
-                <Text className="text-[12px] text-[#64748B] text-right">Live booking mode</Text>
-                <Text className="text-[18px] font-black text-right mt-1" style={{ color: isOnline ? palette.primary : '#111827' }}>
-                  {isOnline ? 'Online' : 'Offline'}
-                </Text>
-              </View>
-            </View>
-          </View>
-
-          {isOnline ? (
             <Animated.View style={{ opacity: fadeAnim }} className="flex-1 mb-6">
               {hasActiveBooking && (
                 <View className="mb-4 rounded-3xl border border-[#CFE7D6] bg-[#F3FBF5] p-4">
@@ -705,24 +592,8 @@ export default function Dashboard({ onBookingSelect, onNavigate, onShowToast, ha
                 )}
               </View>
             </Animated.View>
-          ) : (
-            <View className="flex-1 pt-2">
-              <View className="rounded-[30px] bg-white border border-[#E5E7EB] p-5 mb-6">
-                <Text className="text-[20px] font-black text-[#0F172A] mb-2">Go online to see live bookings</Text>
-                <Text className="text-[14px] text-[#64748B] leading-[21px] mb-4">
-                  Your lead feed is ready. Switch online whenever you want live pickup requests to appear here.
-                </Text>
-                <TouchableOpacity
-                  onPress={handleToggleOnline}
-                  disabled={isToggling}
-                  className={`rounded-full px-5 py-3 self-start ${isOnline ? 'bg-[#4CAF50]' : 'bg-[#1B7332]'} ${isToggling ? 'opacity-70' : ''}`}
-                >
-                  <Text className="text-white font-bold">{isOnline ? 'You are online' : 'Go online now'}</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-          )}
-        </View>
+          ) : undefined}
+        />
       </ScrollView>
       </SafeAreaView>
     </>

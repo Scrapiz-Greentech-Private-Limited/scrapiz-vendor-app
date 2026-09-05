@@ -12,7 +12,7 @@ export default {
     orientation: "portrait",
     icon: "./assets/images/image_splashScreen_green.jpg",
     scheme: "scrapizvendorapp",
-    userInterfaceStyle: "automatic",
+    userInterfaceStyle: "light",
     updates: {
       url: "https://u.expo.dev/84300c01-403e-46d0-bc86-af4fb17348e2",
     },
@@ -101,6 +101,7 @@ export default {
         },
       ],
       "expo-localization",
+      "expo-video",
     ],
     experiments: {
       reactCompiler: true,
