@@ -56,7 +56,7 @@ export default {
       "expo-notifications",
       "expo-barcode-scanner",
       "expo-secure-store",
-      "expo-tracking-transparency"
+      "expo-tracking-transparency",
       [
         "expo-splash-screen",
         {
