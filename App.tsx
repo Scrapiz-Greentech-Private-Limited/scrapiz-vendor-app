@@ -14,9 +14,10 @@ import { OTPVerify, Signup, SimpleLogin } from './src/screens/auth';
 // Main Screens
 import { BillsScreen, Dashboard, EarningsScreen, ManageScreen, PurchaseBillDetailScreen } from './src/screens/main';
 import { LearningHubScreen, ReelPlayerScreen } from './src/screens/learning';
+import PartnerLeaderboardScreen from './src/screens/leaderboard/PartnerLeaderboardScreen';
 
 // Message Screens
-import { MessageScreen } from './src/screens/messages';
+import { MessageScreen, SupportChatScreen } from './src/screens/messages';
 
 // Profile Screens
 import { CustomerReviewFlowScreen, EditProfileScreen, PersonalInfoScreen, ProfileScreen, RatingsHubScreen } from './src/screens/profile';
@@ -1024,14 +1025,18 @@ const AppContent = () => {
         );
       case 'learning-reel':
         return <ReelPlayerScreen onBack={() => setActiveTab(reelReturnTab.current)} />;
+      case 'leaderboard':
+        return <PartnerLeaderboardScreen onBack={handleBackToHome} />;
       case 'earnings':
         return <EarningsScreen onBack={handleBackToHome} />;
       case 'manage':
-        return <ManageScreen onBack={handleBackToHome} onNavigate={handleNavigate} />;
+        return <ManageScreen onBack={handleBackToHome} onNavigate={handleNavigate} activeBooking={activeJob} />;
       case 'profile':
         return <ProfileScreen onBack={handleBackToHome} onNavigate={handleNavigate} onShowToast={showToast} />;
       case 'message':
         return <MessageScreen onBack={handleBackToHome} onNavigate={handleNavigate} onShowToast={showToast} />;
+      case 'support-chat':
+        return <SupportChatScreen onBack={() => setActiveTab('message')} onShowToast={showToast} />;
       case 'edit-profile':
         return <EditProfileScreen onBack={handleBackToProfile} onShowToast={showToast} />;
       case 'personal-info':
@@ -1245,13 +1250,6 @@ const AppContent = () => {
             }}
           />
         ) : null;
-      case 'edit-profile':
-        return (
-          <EditProfileScreen
-            onBack={handleBackToProfile}
-            onShowToast={showToast}
-          />
-        );
       case 'app-settings':
         return (
           <AppSettingsScreen
@@ -1369,7 +1367,7 @@ const AppContent = () => {
       {renderContent()}
       
       {/* Show bottom navigation except on active job, completion, wallet payment flow, subscription, and materials screens */}
-      {activeTab !== 'active-job' && activeTab !== 'job-completion' && activeTab !== 'job-completed' && activeTab !== 'add-money' && activeTab !== 'payment-method' && activeTab !== 'payment-success' && activeTab !== 'subscription' && activeTab !== 'materials' && activeTab !== 'select-material' && activeTab !== 'booking-details' && activeTab !== 'pickup-assessment' && activeTab !== 'edit-profile' && activeTab !== 'personal-info' && activeTab !== 'ratings-hub' && activeTab !== 'customer-review-flow' && activeTab !== 'learning-reel' && !showJobCompletion && (
+      {activeTab !== 'active-job' && activeTab !== 'job-completion' && activeTab !== 'job-completed' && activeTab !== 'add-money' && activeTab !== 'payment-method' && activeTab !== 'payment-success' && activeTab !== 'subscription' && activeTab !== 'materials' && activeTab !== 'select-material' && activeTab !== 'booking-details' && activeTab !== 'pickup-assessment' && activeTab !== 'edit-profile' && activeTab !== 'personal-info' && activeTab !== 'ratings-hub' && activeTab !== 'customer-review-flow' && activeTab !== 'support-chat' && activeTab !== 'learning-reel' && activeTab !== 'leaderboard' && !showJobCompletion && (
         <BottomNavigation
           activeTab={activeTab}
           onTabChange={setActiveTab}

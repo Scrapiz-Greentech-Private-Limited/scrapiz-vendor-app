@@ -1,8 +1,17 @@
-import React, { useMemo } from 'react';
-import { Alert, Image, Linking, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
-import { Ionicons, MaterialIcons } from '@expo/vector-icons';
+import React, { useRef, useState } from 'react';
+import {
+  Animated,
+  Image,
+  Linking,
+  Modal,
+  Pressable,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from 'react-native';
+import { FontAwesome5, Ionicons, MaterialIcons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useAuth } from '../../../hooks/useAuth';
 
 interface MessageScreenProps {
   onBack: () => void;
@@ -10,146 +19,165 @@ interface MessageScreenProps {
   onShowToast?: (message: string, type: 'success' | 'error' | 'info') => void;
 }
 
-const supportAvatar = require('../../../assets/images/vendorApp_logo1.png');
+const supportImage = require('../../../assets/images/avatars/customer_Support.png');
 
-const routeChips = ['Pickup issue', 'Wallet help', 'Subscription', 'Talk to our consultants'];
+const SOCIAL_ROUTES = [
+  {
+    key: 'whatsapp',
+    label: 'WhatsApp',
+    icon: 'whatsapp',
+    color: '#25D366',
+    url: 'whatsapp://send?phone=918000123456&text=Hi%2C%20I%20need%20help%20with%20Scrapiz.',
+    fallbackUrl: 'https://wa.me/918000123456?text=Hi%2C%20I%20need%20help%20with%20Scrapiz.',
+  },
+  {
+    key: 'linkedin',
+    label: 'LinkedIn',
+    icon: 'linkedin-in',
+    color: '#0A66C2',
+    url: 'https://www.linkedin.com/company/scrapiz',
+  },
+  {
+    key: 'instagram',
+    label: 'Instagram',
+    icon: 'instagram',
+    color: '#E4405F',
+    url: 'https://www.instagram.com/scrapiz.in',
+  },
+];
 
 const MessageScreen = ({ onBack, onNavigate, onShowToast }: MessageScreenProps) => {
-  const { user } = useAuth();
+  const [isSocialSheetVisible, setIsSocialSheetVisible] = useState(false);
+  const sheetTranslateY = useRef(new Animated.Value(360)).current;
 
-  const supportOptions = useMemo(
-    () => [
-      {
-        key: 'phone',
-        title: 'Use our dedicated phone support route',
-        subtitle: 'Talk directly with the operations team for urgent vendor help.',
-        icon: 'call',
-        onPress: async () => {
-          const url = 'tel:+918000123456';
-          const supported = await Linking.canOpenURL(url);
-          if (!supported) {
-            Alert.alert('Unavailable', 'Calling is not available on this device.');
-            return;
-          }
-          await Linking.openURL(url);
-        },
-      },
-      {
-        key: 'whatsapp',
-        title: 'Use our WhatsApp route',
-        subtitle: 'Send a quick message and continue the conversation there.',
-        icon: 'logo-whatsapp',
-        onPress: async () => {
-          const text = encodeURIComponent('Hi, I need help with the Scrapiz Vendor App.');
-          const url = `whatsapp://send?phone=918000123456&text=${text}`;
-          const supported = await Linking.canOpenURL(url);
-          if (!supported) {
-            onShowToast?.('WhatsApp is not installed on this device.', 'error');
-            return;
-          }
-          await Linking.openURL(url);
-        },
-      },
-      {
-        key: 'chat',
-        title: 'Use our in-app chat',
-        subtitle: 'Recommended for faster responses and guided troubleshooting.',
-        icon: 'chatbubble-ellipses',
-        recommended: true,
-        onPress: () => onNavigate('help-support'),
-      },
-    ],
-    [onNavigate, onShowToast],
-  );
+  const openSocialSheet = () => {
+    setIsSocialSheetVisible(true);
+    sheetTranslateY.setValue(360);
+    Animated.spring(sheetTranslateY, {
+      toValue: 0,
+      damping: 20,
+      stiffness: 180,
+      useNativeDriver: true,
+    }).start();
+  };
+
+  const closeSocialSheet = () => {
+    Animated.timing(sheetTranslateY, {
+      toValue: 360,
+      duration: 210,
+      useNativeDriver: true,
+    }).start(() => setIsSocialSheetVisible(false));
+  };
+
+  const openRoute = async (route: (typeof SOCIAL_ROUTES)[number]) => {
+    try {
+      const supported = await Linking.canOpenURL(route.url);
+      await Linking.openURL(supported ? route.url : route.fallbackUrl || route.url);
+      closeSocialSheet();
+    } catch {
+      onShowToast?.(`Unable to open ${route.label}.`, 'error');
+    }
+  };
+
+  const callSupport = async () => {
+    const url = 'tel:+918000123456';
+    try {
+      const supported = await Linking.canOpenURL(url);
+      if (!supported) {
+        onShowToast?.('Calling is unavailable on this device.', 'error');
+        return;
+      }
+      await Linking.openURL(url);
+    } catch {
+      onShowToast?.('Unable to start the call.', 'error');
+    }
+  };
 
   return (
     <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
-      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+      <View style={styles.content}>
         <View style={styles.headerRow}>
-          <TouchableOpacity style={styles.headerButton} onPress={onBack}>
-            <Ionicons name="arrow-back" size={20} color="#111827" />
+          <TouchableOpacity style={styles.headerButton} onPress={onBack} activeOpacity={0.8}>
+            <Ionicons name="arrow-back" size={22} color="#0B2D1C" />
           </TouchableOpacity>
-          <Text style={styles.headerSlug}>Support</Text>
-          <TouchableOpacity style={styles.headerButton} onPress={() => onNavigate('contacts')}>
-            <Ionicons name="close" size={20} color="#111827" />
+          <Text style={styles.headerTitle}>Messages</Text>
+          <View style={styles.headerButtonMuted}>
+            <MaterialIcons name="support-agent" size={21} color="#0B7D3A" />
+          </View>
+        </View>
+
+        <Image source={supportImage} style={styles.supportImage} resizeMode="contain" />
+
+        <Text style={styles.title}>Need support?</Text>
+        <Text style={styles.subtitle}>Choose one route. We will keep it quick.</Text>
+
+        <View style={styles.routeList}>
+          <TouchableOpacity style={styles.routeButton} activeOpacity={0.88} onPress={callSupport}>
+            <View style={styles.routeIcon}>
+              <Ionicons name="call" size={22} color="#087333" />
+            </View>
+            <View style={styles.routeCopy}>
+              <Text style={styles.routeTitle}>Call support</Text>
+              <Text style={styles.routeText}>10:00 AM to 9:00 PM</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={20} color="#8AA393" />
           </TouchableOpacity>
-        </View>
 
-        <View style={styles.logoWrap}>
-          <Image source={supportAvatar} style={styles.logo} resizeMode="contain" />
-        </View>
-        <Text style={styles.heroTitle}>Vendor support made simple</Text>
-        <Text style={styles.heroSubtitle}>
-          Choose the route that fits best for {user?.name || 'your team'}, or use in-app chat for faster help.
-        </Text>
-
-        <View style={styles.optionsCard}>
-          {supportOptions.map((option, index) => (
-            <React.Fragment key={option.key}>
-              <TouchableOpacity style={styles.optionRow} activeOpacity={0.88} onPress={option.onPress}>
-                <View style={styles.optionCopy}>
-                  <View style={styles.optionTitleRow}>
-                    <Text style={styles.optionTitle}>{option.title}</Text>
-                    {option.recommended ? <Text style={styles.recommendedPill}>Recommended</Text> : null}
-                  </View>
-                  <Text style={styles.optionSubtitle}>{option.subtitle}</Text>
-                </View>
-                <View style={[styles.optionArrow, option.recommended && styles.optionArrowActive]}>
-                  <Ionicons
-                    name="arrow-forward"
-                    size={16}
-                    color={option.recommended ? '#FFFFFF' : '#111827'}
-                  />
-                </View>
-              </TouchableOpacity>
-              {index < supportOptions.length - 1 ? <View style={styles.optionDivider} /> : null}
-            </React.Fragment>
-          ))}
-        </View>
-
-        <View style={styles.chatCard}>
-          <Text style={styles.chatHeading}>You&apos;re connected with our consultant</Text>
-          <Text style={styles.chatDate}>Today</Text>
-
-          <View style={styles.messagesWrap}>
-            <View style={styles.leftBubble}>
-              <Text style={styles.leftBubbleText}>Hola 👋</Text>
-            </View>
-
-            <View style={styles.consultantRow}>
-              <Image source={supportAvatar} style={styles.chatAvatar} resizeMode="contain" />
-              <View style={styles.rightBubble}>
-                <Text style={styles.rightBubbleText}>What brought you here today?</Text>
-              </View>
-            </View>
-
-            <View style={styles.tagRow}>
-              {routeChips.map((chip) => (
-                <TouchableOpacity key={chip} style={styles.tagChip} activeOpacity={0.86} onPress={() => onNavigate('help-support')}>
-                  <Text style={styles.tagChipText}>{chip}</Text>
-                </TouchableOpacity>
+          <TouchableOpacity style={styles.routeButton} activeOpacity={0.88} onPress={openSocialSheet}>
+            <View style={[styles.routeIcon, styles.socialIconCluster]}>
+              {SOCIAL_ROUTES.map((route) => (
+                <FontAwesome5 key={route.key} name={route.icon as any} size={14} color={route.color} />
               ))}
             </View>
-          </View>
-
-          <TouchableOpacity style={styles.inAppCta} activeOpacity={0.88} onPress={() => onNavigate('help-support')}>
-            <MaterialIcons name="support-agent" size={18} color="#14532D" />
-            <Text style={styles.inAppCtaText}>Open in-app support chat</Text>
+            <View style={styles.routeCopy}>
+              <Text style={styles.routeTitle}>Social messages</Text>
+              <Text style={styles.routeText}>WhatsApp, Instagram, LinkedIn</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={20} color="#8AA393" />
           </TouchableOpacity>
 
-          <View style={styles.inputShell}>
-            <TextInput
-              editable={false}
-              placeholder="Message..."
-              placeholderTextColor="#94A3B8"
-              style={styles.input}
-            />
-            <TouchableOpacity style={styles.sendButton} activeOpacity={0.9} onPress={() => onNavigate('help-support')}>
-              <Ionicons name="arrow-up" size={16} color="#FFFFFF" />
-            </TouchableOpacity>
-          </View>
+          <TouchableOpacity
+            style={[styles.routeButton, styles.primaryRoute]}
+            activeOpacity={0.9}
+            onPress={() => onNavigate('support-chat')}
+          >
+            <View style={[styles.routeIcon, styles.primaryRouteIcon]}>
+              <Ionicons name="chatbubble-ellipses" size={22} color="#FFFFFF" />
+            </View>
+            <View style={styles.routeCopy}>
+              <Text style={styles.primaryRouteTitle}>In-app chat support</Text>
+              <Text style={styles.primaryRouteText}>Start a guided request</Text>
+            </View>
+            <Ionicons name="arrow-forward" size={20} color="#FFFFFF" />
+          </TouchableOpacity>
         </View>
-      </ScrollView>
+      </View>
+
+      <Modal visible={isSocialSheetVisible} transparent animationType="none" onRequestClose={closeSocialSheet}>
+        <Pressable style={styles.sheetOverlay} onPress={closeSocialSheet}>
+          <Animated.View style={[styles.sheet, { transform: [{ translateY: sheetTranslateY }] }]}>
+            <Pressable>
+              <View style={styles.sheetHandle} />
+              <Text style={styles.sheetTitle}>Message Scrapiz</Text>
+              <Text style={styles.sheetText}>Pick a channel to continue.</Text>
+              {SOCIAL_ROUTES.map((route) => (
+                <TouchableOpacity
+                  key={route.key}
+                  style={styles.sheetOption}
+                  activeOpacity={0.88}
+                  onPress={() => openRoute(route)}
+                >
+                  <View style={[styles.sheetOptionIcon, { backgroundColor: `${route.color}18` }]}>
+                    <FontAwesome5 name={route.icon as any} size={21} color={route.color} />
+                  </View>
+                  <Text style={styles.sheetOptionText}>{route.label}</Text>
+                  <Ionicons name="open-outline" size={19} color="#667085" />
+                </TouchableOpacity>
+              ))}
+            </Pressable>
+          </Animated.View>
+        </Pressable>
+      </Modal>
     </SafeAreaView>
   );
 };
@@ -157,257 +185,186 @@ const MessageScreen = ({ onBack, onNavigate, onShowToast }: MessageScreenProps) 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F7F6F2',
+    backgroundColor: '#F4FBF6',
   },
   content: {
-    paddingHorizontal: 20,
-    paddingTop: 10,
-    paddingBottom: 42,
+    flex: 1,
+    paddingHorizontal: 22,
+    paddingTop: 8,
+    paddingBottom: 116,
   },
   headerRow: {
-    flexDirection: 'row',
     alignItems: 'center',
+    flexDirection: 'row',
     justifyContent: 'space-between',
-    marginBottom: 22,
   },
   headerButton: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'rgba(255,255,255,0.78)',
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-  },
-  headerSlug: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#334155',
-  },
-  logoWrap: {
-    width: 88,
-    height: 88,
-    borderRadius: 44,
-    backgroundColor: '#F4DC5B',
-    alignSelf: 'center',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 20,
-    shadowColor: '#000',
+    backgroundColor: '#FFFFFF',
+    shadowColor: '#0D3B22',
     shadowOpacity: 0.08,
-    shadowRadius: 14,
-    shadowOffset: { width: 0, height: 8 },
-    elevation: 4,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 6 },
+    elevation: 3,
   },
-  logo: {
-    width: 60,
-    height: 60,
+  headerButtonMuted: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#E7F9EE',
   },
-  heroTitle: {
+  headerTitle: {
+    color: '#0B2D1C',
+    fontSize: 20,
+    fontWeight: '800',
+  },
+  supportImage: {
+    alignSelf: 'center',
+    width: '100%',
+    height: 278,
+    marginTop: 8,
+    marginBottom: 2,
+  },
+  title: {
+    color: '#082B19',
+    fontSize: 31,
+    fontWeight: '900',
+    letterSpacing: 0,
     textAlign: 'center',
-    fontSize: 28,
-    lineHeight: 34,
-    fontWeight: '700',
-    color: '#0F172A',
   },
-  heroSubtitle: {
-    textAlign: 'center',
+  subtitle: {
+    color: '#5D7467',
     fontSize: 15,
     lineHeight: 22,
-    color: '#475569',
-    marginTop: 10,
-    marginBottom: 24,
-    paddingHorizontal: 12,
-  },
-  optionsCard: {
-    backgroundColor: 'rgba(255,255,255,0.92)',
-    borderRadius: 28,
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-    overflow: 'hidden',
+    marginTop: 8,
     marginBottom: 22,
-  },
-  optionRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 18,
-    paddingVertical: 18,
-  },
-  optionCopy: {
-    flex: 1,
-    paddingRight: 14,
-  },
-  optionTitleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flexWrap: 'wrap',
-    gap: 8,
-  },
-  optionTitle: {
-    fontSize: 18,
-    lineHeight: 24,
-    fontWeight: '600',
-    color: '#111827',
-    flexShrink: 1,
-  },
-  optionSubtitle: {
-    marginTop: 6,
-    fontSize: 14,
-    lineHeight: 20,
-    color: '#64748B',
-  },
-  recommendedPill: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: '#14532D',
-    backgroundColor: '#DCFCE7',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 999,
-  },
-  optionArrow: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#EEF2F7',
-  },
-  optionArrowActive: {
-    backgroundColor: '#111827',
-  },
-  optionDivider: {
-    height: 1,
-    backgroundColor: '#ECEEF3',
-  },
-  chatCard: {
-    backgroundColor: 'rgba(255,255,255,0.96)',
-    borderRadius: 30,
-    padding: 20,
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-  },
-  chatHeading: {
     textAlign: 'center',
-    fontSize: 26,
-    lineHeight: 34,
-    fontWeight: '500',
-    color: '#111827',
   },
-  chatDate: {
-    textAlign: 'center',
-    fontSize: 13,
-    color: '#64748B',
-    marginTop: 18,
-    marginBottom: 16,
+  routeList: {
+    gap: 14,
   },
-  messagesWrap: {
-    gap: 12,
-  },
-  leftBubble: {
-    alignSelf: 'flex-start',
-    backgroundColor: '#F8FAFC',
-    borderRadius: 999,
-    paddingHorizontal: 14,
-    paddingVertical: 9,
-  },
-  leftBubbleText: {
-    color: '#111827',
-    fontSize: 14,
-  },
-  consultantRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-end',
-  },
-  chatAvatar: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    marginRight: 10,
-  },
-  rightBubble: {
-    maxWidth: '82%',
+  routeButton: {
+    minHeight: 82,
+    borderRadius: 24,
     backgroundColor: '#FFFFFF',
-    borderRadius: 18,
-    borderBottomLeftRadius: 6,
     borderWidth: 1,
-    borderColor: '#E5E7EB',
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    shadowColor: '#000',
-    shadowOpacity: 0.04,
-    shadowRadius: 10,
-    shadowOffset: { width: 0, height: 4 },
-    elevation: 2,
-  },
-  rightBubbleText: {
-    color: '#111827',
-    fontSize: 15,
-    lineHeight: 21,
-    fontWeight: '500',
-  },
-  tagRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 10,
-    marginTop: 4,
-  },
-  tagChip: {
-    borderRadius: 999,
-    borderWidth: 1,
-    borderColor: '#D1D5DB',
-    paddingHorizontal: 14,
-    paddingVertical: 9,
-    backgroundColor: '#FFFFFF',
-  },
-  tagChipText: {
-    fontSize: 13,
-    color: '#111827',
-  },
-  inAppCta: {
-    marginTop: 18,
-    marginBottom: 14,
-    borderRadius: 18,
-    backgroundColor: '#ECFDF3',
-    borderWidth: 1,
-    borderColor: '#CDEED8',
+    borderColor: '#DCEFE4',
     paddingHorizontal: 16,
     paddingVertical: 14,
     flexDirection: 'row',
     alignItems: 'center',
+    shadowColor: '#105C31',
+    shadowOpacity: 0.08,
+    shadowRadius: 14,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 3,
+  },
+  routeIcon: {
+    width: 48,
+    height: 48,
+    borderRadius: 18,
+    alignItems: 'center',
     justifyContent: 'center',
+    backgroundColor: '#EAF8EF',
+    marginRight: 14,
   },
-  inAppCtaText: {
-    marginLeft: 8,
-    fontSize: 15,
-    fontWeight: '700',
-    color: '#14532D',
+  socialIconCluster: {
+    flexDirection: 'row',
+    gap: 5,
   },
-  inputShell: {
+  routeCopy: {
+    flex: 1,
+    minWidth: 0,
+  },
+  routeTitle: {
+    color: '#102B1D',
+    fontSize: 17,
+    fontWeight: '800',
+  },
+  routeText: {
+    color: '#6A7D71',
+    fontSize: 13,
+    lineHeight: 19,
+    marginTop: 4,
+  },
+  primaryRoute: {
+    backgroundColor: '#078735',
+    borderColor: '#078735',
+  },
+  primaryRouteIcon: {
+    backgroundColor: 'rgba(255,255,255,0.18)',
+  },
+  primaryRouteTitle: {
+    color: '#FFFFFF',
+    fontSize: 17,
+    fontWeight: '900',
+  },
+  primaryRouteText: {
+    color: 'rgba(255,255,255,0.78)',
+    fontSize: 13,
+    lineHeight: 19,
+    marginTop: 4,
+  },
+  sheetOverlay: {
+    flex: 1,
+    justifyContent: 'flex-end',
+    backgroundColor: 'rgba(7, 31, 18, 0.38)',
+  },
+  sheet: {
+    borderTopLeftRadius: 32,
+    borderTopRightRadius: 32,
+    backgroundColor: '#FFFFFF',
+    paddingHorizontal: 22,
+    paddingTop: 12,
+    paddingBottom: 34,
+  },
+  sheetHandle: {
+    alignSelf: 'center',
+    width: 46,
+    height: 5,
+    borderRadius: 999,
+    backgroundColor: '#D9E6DE',
+    marginBottom: 18,
+  },
+  sheetTitle: {
+    color: '#092A19',
+    fontSize: 22,
+    fontWeight: '900',
+  },
+  sheetText: {
+    color: '#65776C',
+    fontSize: 14,
+    marginTop: 5,
+    marginBottom: 14,
+  },
+  sheetOption: {
+    height: 66,
+    borderRadius: 22,
     flexDirection: 'row',
     alignItems: 'center',
-    borderWidth: 1,
-    borderColor: '#D7DCE4',
-    borderRadius: 999,
-    paddingLeft: 16,
-    paddingRight: 8,
-    paddingVertical: 6,
+    backgroundColor: '#F7FBF8',
+    paddingHorizontal: 14,
+    marginTop: 10,
   },
-  input: {
-    flex: 1,
-    fontSize: 14,
-    color: '#111827',
-    paddingVertical: 8,
-  },
-  sendButton: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
+  sheetOptionIcon: {
+    width: 42,
+    height: 42,
+    borderRadius: 16,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#111827',
+    marginRight: 13,
+  },
+  sheetOptionText: {
+    flex: 1,
+    color: '#102B1D',
+    fontSize: 16,
+    fontWeight: '800',
   },
 });
 

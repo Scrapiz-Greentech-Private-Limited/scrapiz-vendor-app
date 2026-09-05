@@ -445,6 +445,7 @@ export default function Dashboard({ onBookingSelect, onNavigate, onShowToast, ha
           onPeriodChange={setPeriod}
           onToggleOnline={handleToggleOnline}
           onOpenLearning={() => onNavigate('learning')}
+          onOpenLeaderboard={() => onNavigate('leaderboard')}
           onOpenReel={() => onNavigate('learning-reel')}
           onOpenLeads={() => onNavigate('history')}
           onOpenRevenue={() => onNavigate('earnings')}

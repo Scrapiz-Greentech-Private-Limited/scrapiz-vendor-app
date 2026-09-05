@@ -21,10 +21,17 @@ const BANNER_ASSETS = [
   require('../../../../assets/images/banner/vendor_app_banner_2.webp'),
 ];
 const LEAF = require('../../../../assets/images/leaf_iamge.png');
+const AWARDS = {
+  Gold: require('../../../../assets/images/golden_award.png'),
+  Silver: require('../../../../assets/images/silver_award.png'),
+  Bronze: require('../../../../assets/images/bronze_award.png'),
+} as const;
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const PAGE_GUTTER = 20;
 const BANNER_WIDTH = SCREEN_WIDTH - PAGE_GUTTER * 2;
-const BANNER_HEIGHT = Math.round(BANNER_WIDTH * 0.52);
+const BANNER_HEIGHT = Math.round(BANNER_WIDTH * 0.5);
+const CARD_GAP = 10;
+const THREE_UP_CARD_SIZE = Math.floor((BANNER_WIDTH - CARD_GAP * 2) / 3);
 const CAROUSEL_INTERVAL_MS = 7500;
 
 export type HomePeriod = 'this_month' | 'this_week' | 'all_time';
@@ -46,6 +53,7 @@ type PartnerHomeContentProps = {
   onPeriodChange: (period: HomePeriod) => void;
   onToggleOnline: () => void;
   onOpenLearning: () => void;
+  onOpenLeaderboard: () => void;
   onOpenReel: () => void;
   onOpenLeads?: () => void;
   onOpenRevenue?: () => void;
@@ -113,6 +121,7 @@ export default function PartnerHomeContent({
   onPeriodChange,
   onToggleOnline,
   onOpenLearning,
+  onOpenLeaderboard,
   onOpenReel,
   onOpenLeads,
   onOpenRevenue,
@@ -199,7 +208,7 @@ export default function PartnerHomeContent({
           })}
           renderItem={({ item }) => (
             <View style={styles.bannerSlide}>
-              <Image source={item} style={styles.bannerImage} contentFit="cover" />
+              <Image source={item} style={styles.bannerImage} contentFit="contain" />
             </View>
           )}
         />
@@ -250,26 +259,71 @@ export default function PartnerHomeContent({
 
       <View style={styles.sectionHead}>
         <Text style={styles.sectionTitle}>Top Partner Leaderboard</Text>
-        <TouchableOpacity onPress={onOpenLearning} hitSlop={8}>
-          <Text style={styles.viewAll}>View all →</Text>
+        <TouchableOpacity onPress={onOpenLeaderboard} hitSlop={8}>
+          <View style={styles.viewAllRow}>
+            <Text style={styles.viewAll}>View all</Text>
+            <MaterialIcons name="arrow-forward" size={15} color={HOME.muted} />
+          </View>
         </TouchableOpacity>
       </View>
-      <View style={styles.leaderRow}>
-        {LEADERBOARD.map((item) => (
-          <View key={item.place} style={[styles.leaderCard, { backgroundColor: item.color }]}>
-            <Image source={{ uri: item.avatar }} style={styles.leaderAvatar} />
-            <MaterialIcons name={item.icon} size={18} color={item.ink} />
-            <Text style={[styles.leaderMedal, { color: item.ink }]}>{item.medal}</Text>
-            <Text style={styles.leaderName}>{item.name}</Text>
-            <Text style={[styles.leaderPlace, { color: item.ink }]}>{item.place}</Text>
-          </View>
-        ))}
+      <View style={styles.leaderBoard}>
+        <View style={styles.leaderRow}>
+          {LEADERBOARD.map((item) => (
+            <View
+              key={item.place}
+              style={[
+                styles.leaderCard,
+                { backgroundColor: item.color },
+              ]}
+            >
+              {/* Soft decorative highlight */}
+              <View
+                style={[
+                  styles.leaderGlow,
+                  { backgroundColor: item.ink },
+                ]}
+              />
+
+              {/* Crown */}
+              <View style={styles.crownWrap}>
+                <Text style={[styles.crown, { color: item.ink }]}>♛</Text>
+              </View>
+
+              {/* Partner information */}
+              <View style={styles.leaderPerson}>
+                <Image
+                  source={{ uri: item.avatar }}
+                  style={styles.leaderAvatar}
+                />
+                <Text
+                  style={styles.leaderName}
+                  numberOfLines={2}
+                  ellipsizeMode="tail"
+                >
+                  {item.name}
+                </Text>
+              </View>
+
+              {/* Trophy */}
+              <View style={styles.awardWrap}>
+                <Image
+                  source={AWARDS[item.medal as keyof typeof AWARDS]}
+                  style={styles.awardImage}
+                  contentFit="contain"
+                />
+              </View>
+            </View>
+          ))}
+        </View>
       </View>
 
       <View style={styles.sectionHead}>
         <Text style={styles.sectionTitle}>Partner Learning Corner</Text>
         <TouchableOpacity onPress={onOpenLearning} hitSlop={8}>
-          <Text style={styles.viewAll}>View all →</Text>
+          <View style={styles.viewAllRow}>
+            <Text style={styles.viewAll}>View all</Text>
+            <MaterialIcons name="arrow-forward" size={15} color={HOME.muted} />
+          </View>
         </TouchableOpacity>
       </View>
       <TouchableOpacity style={styles.learnCard} onPress={onOpenReel} activeOpacity={0.92}>
@@ -307,7 +361,8 @@ export default function PartnerHomeContent({
             disabled={isToggling}
             activeOpacity={0.9}
           >
-            <Text style={styles.goOnlineBtnText}>Go Online →</Text>
+            <Text style={styles.goOnlineBtnText}>Go Online</Text>
+            <MaterialIcons name="arrow-forward" size={16} color="#FFFFFF" />
           </TouchableOpacity>
         </View>
       )}
@@ -475,10 +530,10 @@ const styles = StyleSheet.create({
     color: HOME.ink,
   },
   bannerWrap: {
-    borderRadius: 22,
+    borderRadius: 20,
     overflow: 'hidden',
     marginBottom: 22,
-    backgroundColor: HOME.card,
+    backgroundColor: '#EAF4EE',
     shadowColor: HOME.shadow,
     shadowOpacity: 0.08,
     shadowRadius: 16,
@@ -488,6 +543,7 @@ const styles = StyleSheet.create({
   bannerSlide: {
     width: BANNER_WIDTH,
     height: BANNER_HEIGHT,
+    backgroundColor: '#EAF4EE',
   },
   bannerImage: {
     width: '100%',
@@ -528,6 +584,11 @@ const styles = StyleSheet.create({
     color: HOME.muted,
     fontWeight: '600',
   },
+  viewAllRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+  },
   periodChip: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -540,20 +601,19 @@ const styles = StyleSheet.create({
   },
   bentoRow: {
     flexDirection: 'row',
-    gap: 10,
+    gap: CARD_GAP,
     marginBottom: 22,
   },
   bentoCard: {
-    flex: 1,
+    width: THREE_UP_CARD_SIZE,
+    height: THREE_UP_CARD_SIZE,
     borderRadius: 18,
-    paddingHorizontal: 10,
-    paddingVertical: 14,
-    minHeight: 118,
+    padding: 12,
     justifyContent: 'space-between',
   },
   bentoValue: {
-    marginTop: 10,
-    fontSize: 18,
+    marginTop: 6,
+    fontSize: 21,
     fontWeight: '800',
     color: HOME.ink,
   },
@@ -565,46 +625,117 @@ const styles = StyleSheet.create({
   },
   bentoLabel: {
     flex: 1,
-    fontSize: 10,
-    lineHeight: 13,
+    fontSize: 11,
+    lineHeight: 14,
     color: HOME.muted,
-    fontWeight: '600',
+    fontWeight: '700',
   },
-  leaderRow: {
-    flexDirection: 'row',
-    gap: 10,
+leaderBoard: {
     marginBottom: 22,
   },
+
+  leaderRow: {
+    flexDirection: 'row',
+    gap: CARD_GAP,
+    alignItems: 'stretch',
+  },
+
+  /*
+   * Premium compact leaderboard card.
+   * Crown, partner and trophy each have a
+   * dedicated visual zone.
+   */
   leaderCard: {
-    flex: 1,
-    borderRadius: 18,
-    paddingVertical: 14,
-    paddingHorizontal: 8,
+    width: THREE_UP_CARD_SIZE,
+    height: 138,
+    borderRadius: 20,
+    position: 'relative',
+    overflow: 'hidden',
+
+    paddingTop: 7,
+    paddingBottom: 9,
+    paddingHorizontal: 10,
+
+    shadowColor: HOME.shadow,
+    shadowOpacity: 0.07,
+    shadowRadius: 12,
+    shadowOffset: {
+      width: 0,
+      height: 6,
+    },
+    elevation: 2,
+  },
+
+  leaderGlow: {
+    position: 'absolute',
+    width: 76,
+    height: 76,
+    borderRadius: 38,
+    right: -30,
+    top: -28,
+    opacity: 0.07,
+  },
+
+  /* Crown gets its own top-center breathing room */
+  crownWrap: {
+    height: 28,
     alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 3,
   },
-  leaderAvatar: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    marginBottom: 6,
-    backgroundColor: '#fff',
-  },
-  leaderMedal: {
-    marginTop: 2,
-    fontSize: 11,
+
+  crown: {
+    fontSize: 24,
+    lineHeight: 27,
     fontWeight: '800',
+    includeFontPadding: false,
   },
+
+  /* Partner information occupies only the left side */
+  leaderPerson: {
+    position: 'absolute',
+    left: 10,
+    top: 45,
+    width: '39%',
+    alignItems: 'flex-start',
+    zIndex: 2,
+  },
+
+  leaderAvatar: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 2,
+    borderColor: '#FFFFFF',
+  },
+
   leaderName: {
-    marginTop: 2,
-    fontSize: 13,
+    marginTop: 7,
+    width: '100%',
+    fontSize: 11.5,
+    lineHeight: 14,
     fontWeight: '800',
     color: HOME.ink,
   },
-  leaderPlace: {
-    marginTop: 2,
-    fontSize: 11,
-    fontWeight: '700',
+
+  /* Trophy has its own right-side visual zone */
+  awardWrap: {
+    position: 'absolute',
+    right: 5,
+    top: 48,
+    width: '55%',
+    height: 76,
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 1,
   },
+
+  awardImage: {
+    width: '100%',
+    height: '100%',
+  },
+
   learnCard: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -714,6 +845,9 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     paddingHorizontal: 14,
     paddingVertical: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
   },
   goOnlineBtnText: {
     color: '#FFFFFF',
