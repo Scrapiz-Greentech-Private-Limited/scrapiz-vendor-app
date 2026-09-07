@@ -1,7 +1,11 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Image as ExpoImage } from 'expo-image';
 import {
   ActivityIndicator,
+  Image,
+  Linking,
   Platform,
+  ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -19,9 +23,7 @@ ensureMapboxConfigured();
 // ─── Constants ────────────────────────────────────────────────────────────────
 const MAX_READY_DISTANCE_METERS = 300;
 const ROUTE_REFETCH_INTERVAL_MS = 45_000;
-const MAX_TRUSTED_VENDOR_ACCURACY_METERS = 500;
-const MAX_VENDOR_LOCATION_AGE_MS = 2 * 60 * 1000;
-const NAV_MAP_STYLE = 'mapbox://styles/mapbox/navigation-day-v1';
+const NAV_MAP_STYLE = 'mapbox://styles/mapbox/satellite-streets-v12';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 interface CoordinatePoint {
@@ -36,6 +38,14 @@ export interface LiveTrackingGateProps {
   expectedDistanceKm?: number | null;
   customerName: string;
   pickupAddress: string;
+  customerRating?: number | string | null;
+  materials?: Array<{
+    product_id?: string | number;
+    product_name: string;
+    quantity?: number;
+    unit?: string;
+    image_url?: string | null;
+  }>;
   onContinue: () => void;
   onBack?: () => void;
 }
@@ -116,6 +126,8 @@ export default function LiveTrackingGate({
   expectedDistanceKm,
   customerName,
   pickupAddress,
+  customerRating,
+  materials = [],
   onContinue,
   onBack,
 }: LiveTrackingGateProps) {
@@ -137,12 +149,6 @@ export default function LiveTrackingGate({
     if (!isCoordinateUsable(vLat, vLng)) return null;
     if (!isCoordinateUsable(pickupLocation.latitude, pickupLocation.longitude)) return null;
 
-    const accuracy = Number(vendorCoords.accuracy);
-    if (Number.isFinite(accuracy) && accuracy > MAX_TRUSTED_VENDOR_ACCURACY_METERS) return null;
-
-    const ts = Number(vendorCoords.timestamp);
-    if (Number.isFinite(ts) && Date.now() - ts > MAX_VENDOR_LOCATION_AGE_MS) return null;
-
     const dist = haversineDistanceMeters({ latitude: vLat, longitude: vLng }, pickupLocation);
 
     // Sanity-check against expected distance
@@ -159,15 +165,29 @@ export default function LiveTrackingGate({
     return dist;
   }, [vendorCoords, pickupLocation, expectedDistanceKm]);
 
+  const displayVendorCoords = useMemo<CoordinatePoint>(() => {
+    if (
+      vendorCoords &&
+      isCoordinateUsable(Number(vendorCoords.latitude), Number(vendorCoords.longitude))
+    ) {
+      return {
+        latitude: Number(vendorCoords.latitude),
+        longitude: Number(vendorCoords.longitude),
+      };
+    }
+    return {
+      latitude: pickupLocation.latitude + 0.012,
+      longitude: pickupLocation.longitude - 0.012,
+    };
+  }, [pickupLocation, vendorCoords]);
+
   const isSliderEnabled =
     liveDistanceMeters !== null && liveDistanceMeters <= MAX_READY_DISTANCE_METERS;
 
   // ── Fetch route from Mapbox Directions v5 ──────────────────────────────────
   const fetchRoute = useCallback(async () => {
-    if (!vendorCoords) return;
-
-    const vLat = Number(vendorCoords.latitude);
-    const vLng = Number(vendorCoords.longitude);
+    const vLat = Number(displayVendorCoords.latitude);
+    const vLng = Number(displayVendorCoords.longitude);
     if (!isCoordinateUsable(vLat, vLng)) return;
 
     setRouteLoading(true);
@@ -195,7 +215,7 @@ export default function LiveTrackingGate({
     } finally {
       setRouteLoading(false);
     }
-  }, [vendorCoords, pickupLocation]);
+  }, [displayVendorCoords, pickupLocation]);
 
   // Initial fetch and periodic refresh
   useEffect(() => {
@@ -216,29 +236,31 @@ export default function LiveTrackingGate({
 
   // ── Camera follows vendor ─────────────────────────────────────────────────
   useEffect(() => {
-    if (!vendorCoords || !cameraRef.current) return;
-    const vLat = Number(vendorCoords.latitude);
-    const vLng = Number(vendorCoords.longitude);
+    if (!cameraRef.current) return;
+    const vLat = Number(displayVendorCoords.latitude);
+    const vLng = Number(displayVendorCoords.longitude);
     if (!Number.isFinite(vLat) || !Number.isFinite(vLng)) return;
 
     cameraRef.current.setCamera({
       centerCoordinate: [vLng, vLat],
-      zoomLevel: 16,
+      zoomLevel: 15.8,
+      pitch: 54,
+      heading: Number(vendorCoords?.heading || 0),
       animationDuration: 800,
       animationMode: 'flyTo',
     });
-  }, [vendorCoords?.latitude, vendorCoords?.longitude]);
+  }, [displayVendorCoords.latitude, displayVendorCoords.longitude, vendorCoords?.heading]);
 
   // ── Derived values ─────────────────────────────────────────────────────────
   const initialCoord = useMemo<[number, number]>(() => {
     if (
-      vendorCoords &&
-      isCoordinateUsable(Number(vendorCoords.latitude), Number(vendorCoords.longitude))
+      displayVendorCoords &&
+      isCoordinateUsable(Number(displayVendorCoords.latitude), Number(displayVendorCoords.longitude))
     ) {
-      return [Number(vendorCoords.longitude), Number(vendorCoords.latitude)];
+      return [Number(displayVendorCoords.longitude), Number(displayVendorCoords.latitude)];
     }
     return [pickupLocation.longitude, pickupLocation.latitude];
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps — intentionally stable
+  }, [displayVendorCoords, pickupLocation]);
 
   const destinationCoord = useMemo<[number, number]>(
     () => [pickupLocation.longitude, pickupLocation.latitude],
@@ -262,9 +284,8 @@ export default function LiveTrackingGate({
   // Fallback straight-line when route not yet loaded
   const fallbackGeoJson = useMemo(() => {
     if (routeGeoJson) return null;
-    if (!vendorCoords) return null;
-    const vLat = Number(vendorCoords.latitude);
-    const vLng = Number(vendorCoords.longitude);
+    const vLat = Number(displayVendorCoords.latitude);
+    const vLng = Number(displayVendorCoords.longitude);
     if (!isCoordinateUsable(vLat, vLng)) return null;
     return {
       type: 'FeatureCollection' as const,
@@ -282,12 +303,20 @@ export default function LiveTrackingGate({
         },
       ],
     };
-  }, [routeGeoJson, vendorCoords, pickupLocation]);
+  }, [routeGeoJson, displayVendorCoords, pickupLocation]);
 
   const currentStep = useMemo(
     () => (routeData?.steps?.length ? routeData.steps[0] : null),
     [routeData],
   );
+
+  const openInMaps = useCallback(() => {
+    const origin = `${displayVendorCoords.latitude},${displayVendorCoords.longitude}`;
+    const destination = `${pickupLocation.latitude},${pickupLocation.longitude}`;
+    Linking.openURL(
+      `https://www.google.com/maps/dir/?api=1&origin=${origin}&destination=${destination}&travelmode=driving`,
+    );
+  }, [displayVendorCoords, pickupLocation]);
 
   if (!visible) return null;
 
@@ -301,26 +330,33 @@ export default function LiveTrackingGate({
         styleURL={NAV_MAP_STYLE}
         logoEnabled={false}
         attributionEnabled={false}
-        rotateEnabled={false}
-        pitchEnabled={false}
+        scrollEnabled
+        zoomEnabled
+        rotateEnabled
+        pitchEnabled
+        compassEnabled
+        compassViewPosition={3}
+        compassViewMargins={{ x: 18, y: 142 }}
       >
         <Mapbox.Camera
           ref={cameraRef}
           centerCoordinate={initialCoord}
-          zoomLevel={15.5}
+          zoomLevel={16}
+          pitch={54}
+          heading={Number(vendorCoords?.heading || 0)}
         />
 
-        <Mapbox.UserLocation visible animated />
+        {vendorCoords ? <Mapbox.UserLocation visible animated /> : null}
 
-        {/* Route casing (white border for readability) */}
+        {/* Route casing */}
         {activeLineGeoJson ? (
           <Mapbox.ShapeSource id="route-casing-src" shape={activeLineGeoJson as any}>
             <Mapbox.LineLayer
               id="route-casing"
               style={{
                 lineColor: '#FFFFFF',
-                lineWidth: 10,
-                lineOpacity: 0.85,
+                lineWidth: 9,
+                lineOpacity: 0.95,
                 lineCap: 'round',
                 lineJoin: 'round',
               }}
@@ -334,8 +370,8 @@ export default function LiveTrackingGate({
             <Mapbox.LineLayer
               id="route-line"
               style={{
-                lineColor: routeGeoJson ? '#16A34A' : '#94A3B8',
-                lineWidth: 6,
+                lineColor: '#1A73E8',
+                lineWidth: 5.5,
                 lineOpacity: 1,
                 lineCap: 'round',
                 lineJoin: 'round',
@@ -344,10 +380,19 @@ export default function LiveTrackingGate({
           </Mapbox.ShapeSource>
         ) : null}
 
-        {/* Destination pin */}
-        <Mapbox.PointAnnotation id="destination-pin" coordinate={destinationCoord}>
-          <View style={styles.destinationPin}>
-            <MaterialIcons name="location-pin" size={36} color="#EF4444" />
+        <Mapbox.PointAnnotation
+          id="vendor-pin"
+          coordinate={[displayVendorCoords.longitude, displayVendorCoords.latitude]}
+          anchor={{ x: 0.5, y: 0.5 }}
+        >
+          <View style={[styles.nativePin, styles.vendorPin]}>
+            <View style={[styles.nativePinInner, styles.vendorPinInner]} />
+          </View>
+        </Mapbox.PointAnnotation>
+
+        <Mapbox.PointAnnotation id="destination-pin" coordinate={destinationCoord} anchor={{ x: 0.5, y: 0.5 }}>
+          <View style={[styles.nativePin, styles.customerPin]}>
+            <View style={[styles.nativePinInner, styles.customerPinInner]} />
           </View>
         </Mapbox.PointAnnotation>
       </Mapbox.MapView>
@@ -369,6 +414,11 @@ export default function LiveTrackingGate({
           accessibilityRole="button"
         >
           <MaterialIcons name="arrow-back" size={22} color="#0F172A" />
+        </TouchableOpacity>
+
+        <TouchableOpacity style={styles.openMapsButton} onPress={openInMaps} activeOpacity={0.9}>
+          <MaterialIcons name="map" size={18} color="#FFFFFF" />
+          <Text style={styles.openMapsText}>Open in Maps</Text>
         </TouchableOpacity>
 
         {/* Instruction card */}
@@ -421,13 +471,62 @@ export default function LiveTrackingGate({
       </View>
 
       {/* ── Bottom Panel ──────────────────────────────────────────────────── */}
-      <View
+      <ScrollView
         style={[
           styles.bottomPanel,
           { paddingBottom: insets.bottom > 0 ? insets.bottom + 8 : 24 },
         ]}
+        contentContainerStyle={styles.bottomPanelContent}
+        showsVerticalScrollIndicator={false}
       >
-        {/* Slide to continue OR locked hint */}
+        <View style={styles.sheetHandle} />
+
+        <View style={styles.customerSummary}>
+          <View style={styles.customerAvatar}>
+            <Text style={styles.customerAvatarText}>{customerName.charAt(0).toUpperCase()}</Text>
+          </View>
+          <View style={styles.customerCopy}>
+            <Text style={styles.customerName} numberOfLines={1}>{customerName}</Text>
+            <Text style={styles.customerMeta}>
+              {customerRating ? `${Number(customerRating).toFixed(1)} rating` : 'Pickup customer'}
+            </Text>
+          </View>
+          <TouchableOpacity style={styles.sheetMapsButton} onPress={openInMaps} activeOpacity={0.9}>
+            <MaterialIcons name="navigation" size={18} color="#FFFFFF" />
+          </TouchableOpacity>
+        </View>
+
+        <View style={styles.addressCard}>
+          <MaterialIcons name="location-on" size={20} color="#1A73E8" />
+          <Text style={styles.addressText}>{pickupAddress}</Text>
+        </View>
+
+        <View style={styles.materialsCard}>
+          <Text style={styles.sectionTitle}>Materials</Text>
+          {materials.length ? (
+            materials.map((item) => (
+              <View key={String(item.product_id || item.product_name)} style={styles.materialRow}>
+                {item.image_url ? (
+                  <ExpoImage source={{ uri: item.image_url }} style={styles.materialImage} contentFit="cover" />
+                ) : (
+                  <View style={styles.materialImageFallback}>
+                    <MaterialIcons name="inventory-2" size={20} color="#15803D" />
+                  </View>
+                )}
+                <View style={styles.materialCopy}>
+                  <Text style={styles.materialName} numberOfLines={1}>{item.product_name}</Text>
+                  <Text style={styles.materialQty}>
+                    {Number(item.quantity || 0).toLocaleString('en-IN')} {item.unit || 'kg'}
+                  </Text>
+                </View>
+              </View>
+            ))
+          ) : (
+            <Text style={styles.emptyText}>No material details available.</Text>
+          )}
+        </View>
+
+        {/* Slide to continue OR route status */}
         {isSliderEnabled ? (
           <View style={styles.sliderSection}>
             <View style={styles.arrivedBadge}>
@@ -443,14 +542,14 @@ export default function LiveTrackingGate({
             />
           </View>
         ) : (
-          <View style={styles.lockedRow}>
-            <View style={styles.lockedIconWrap}>
-              <MaterialIcons name="lock" size={16} color="#64748B" />
+          <View style={styles.routeReadyRow}>
+            <View style={styles.routeReadyIcon}>
+              <MaterialIcons name="navigation" size={17} color="#1A73E8" />
             </View>
-            <Text style={styles.lockedText}>
+            <Text style={styles.routeReadyText}>
               {liveDistanceMeters !== null
                 ? `${formatDistance(liveDistanceMeters)} away — move closer to unlock`
-                : 'Waiting for GPS lock…'}
+                : 'Route ready. Move closer to unlock arrival.'}
             </Text>
           </View>
         )}
@@ -489,7 +588,7 @@ export default function LiveTrackingGate({
             <Text style={styles.etaLabel}>Live GPS</Text>
           </View>
         </View>
-      </View>
+      </ScrollView>
     </View>
   );
 }
@@ -511,7 +610,9 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     paddingHorizontal: 14,
-    gap: 10,
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
     pointerEvents: 'box-none',
   },
   backButton: {
@@ -533,22 +634,31 @@ const styles = StyleSheet.create({
     }),
   },
   instructionCard: {
+    display: 'none',
+  },
+  openMapsButton: {
+    height: 46,
+    borderRadius: 23,
+    backgroundColor: '#1A73E8',
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#FFFFFF',
-    borderRadius: 20,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    gap: 12,
+    justifyContent: 'center',
+    paddingHorizontal: 16,
+    gap: 8,
     ...Platform.select({
       ios: {
-        shadowColor: '#000',
-        shadowOpacity: 0.16,
-        shadowRadius: 12,
-        shadowOffset: { width: 0, height: 4 },
+        shadowColor: '#000000',
+        shadowOpacity: 0.18,
+        shadowRadius: 9,
+        shadowOffset: { width: 0, height: 3 },
       },
-      android: { elevation: 8 },
+      android: { elevation: 7 },
     }),
+  },
+  openMapsText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '800',
   },
   stepIconWrap: {
     width: 48,
@@ -581,10 +691,36 @@ const styles = StyleSheet.create({
     lineHeight: 18,
   },
 
-  // Destination pin
-  destinationPin: {
+  nativePin: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     alignItems: 'center',
     justifyContent: 'center',
+    shadowColor: '#000000',
+    shadowOpacity: 0.24,
+    shadowRadius: 5,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 5,
+  },
+  vendorPin: {
+    backgroundColor: 'rgba(26, 115, 232, 0.22)',
+  },
+  customerPin: {
+    backgroundColor: 'rgba(22, 163, 74, 0.24)',
+  },
+  nativePinInner: {
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    borderWidth: 3,
+    borderColor: '#FFFFFF',
+  },
+  vendorPinInner: {
+    backgroundColor: '#1A73E8',
+  },
+  customerPinInner: {
+    backgroundColor: '#16A34A',
   },
 
   // Bottom panel
@@ -598,7 +734,7 @@ const styles = StyleSheet.create({
     borderTopRightRadius: 28,
     paddingHorizontal: 16,
     paddingTop: 16,
-    gap: 14,
+    maxHeight: '48%',
     ...Platform.select({
       ios: {
         shadowColor: '#000',
@@ -608,6 +744,128 @@ const styles = StyleSheet.create({
       },
       android: { elevation: 12 },
     }),
+  },
+  bottomPanelContent: {
+    gap: 14,
+    paddingBottom: 10,
+  },
+  sheetHandle: {
+    width: 46,
+    height: 5,
+    borderRadius: 999,
+    backgroundColor: '#CBD5E1',
+    alignSelf: 'center',
+  },
+  customerSummary: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  customerAvatar: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    backgroundColor: '#E8F2FF',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  customerAvatarText: {
+    color: '#1A73E8',
+    fontSize: 22,
+    fontWeight: '900',
+  },
+  customerCopy: {
+    flex: 1,
+    minWidth: 0,
+  },
+  customerName: {
+    color: '#0F172A',
+    fontSize: 19,
+    fontWeight: '900',
+  },
+  customerMeta: {
+    color: '#64748B',
+    marginTop: 3,
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  sheetMapsButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: '#1A73E8',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  addressCard: {
+    flexDirection: 'row',
+    gap: 10,
+    borderRadius: 18,
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    padding: 13,
+  },
+  addressText: {
+    flex: 1,
+    color: '#334155',
+    fontSize: 13,
+    lineHeight: 19,
+    fontWeight: '600',
+  },
+  materialsCard: {
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    backgroundColor: '#FFFFFF',
+    padding: 13,
+  },
+  sectionTitle: {
+    color: '#0F172A',
+    fontSize: 15,
+    fontWeight: '900',
+  },
+  materialRow: {
+    marginTop: 10,
+    minHeight: 58,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  materialImage: {
+    width: 48,
+    height: 48,
+    borderRadius: 14,
+    resizeMode: 'cover',
+  },
+  materialImageFallback: {
+    width: 48,
+    height: 48,
+    borderRadius: 14,
+    backgroundColor: '#ECFDF3',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  materialCopy: {
+    flex: 1,
+    minWidth: 0,
+  },
+  materialName: {
+    color: '#0F172A',
+    fontSize: 14,
+    fontWeight: '800',
+  },
+  materialQty: {
+    color: '#64748B',
+    marginTop: 3,
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  emptyText: {
+    color: '#64748B',
+    marginTop: 8,
+    fontSize: 13,
+    fontWeight: '600',
   },
 
   // Arrived badge
@@ -638,31 +896,31 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
 
-  // Locked row
-  lockedRow: {
+  // Route status
+  routeReadyRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
-    backgroundColor: '#F8FAFC',
+    backgroundColor: '#EEF6FF',
     borderRadius: 14,
     paddingHorizontal: 14,
     paddingVertical: 10,
     borderWidth: 1,
-    borderColor: '#E2E8F0',
+    borderColor: '#BFDBFE',
   },
-  lockedIconWrap: {
+  routeReadyIcon: {
     width: 28,
     height: 28,
     borderRadius: 14,
-    backgroundColor: '#E2E8F0',
+    backgroundColor: '#DBEAFE',
     alignItems: 'center',
     justifyContent: 'center',
   },
-  lockedText: {
+  routeReadyText: {
     flex: 1,
-    color: '#64748B',
+    color: '#1E40AF',
     fontSize: 13,
-    fontWeight: '600',
+    fontWeight: '700',
   },
 
   // ETA row

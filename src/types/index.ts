@@ -24,6 +24,8 @@ export interface User {
 
 export interface BookingRequest {
   id: string;
+  displayId?: string;
+  orderNumber?: string;
   scrapType: string;
   distance: string;
   customerName: string;
@@ -75,6 +77,7 @@ export interface LeadDetailsResponse {
   estimated_minutes: number;
   is_urgent: boolean;
   pickup_address: string;
+  customer_note?: string | null;
   pickup_lat: number;
   pickup_lng: number;
   customer: {
@@ -86,6 +89,7 @@ export interface LeadDetailsResponse {
   };
   order: {
     order_number: string;
+    total_weight?: number | string | null;
     estimated_value_min: number;
     estimated_value_max: number;
     scheduled_at?: string;
@@ -103,10 +107,15 @@ export interface BookingActiveOrderItem {
   quantity: number;
   unit: string;
   rate_per_unit: number;
+  min_rate?: number;
+  max_rate?: number;
+  image_url?: string;
+  category?: string;
 }
 
 export interface BookingActiveResponse {
   booking_id: string;
+  order_number?: string;
   status: string;
   step: number | 'en_route' | 'arrived' | 'in_progress' | 'ready';
   total_steps: number;
@@ -120,6 +129,8 @@ export interface BookingActiveResponse {
   pickup_lat: number;
   pickup_lng: number;
   material_summary: string;
+  total_weight?: number | string | null;
+  estimated_order_value?: number | string | null;
   distance_km: number;
   order_items: BookingActiveOrderItem[];
   started_at?: string;

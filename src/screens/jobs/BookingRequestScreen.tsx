@@ -6,6 +6,7 @@ import {
   Linking,
   Modal,
   ScrollView,
+  SafeAreaView,
   StyleSheet,
   Text,
   TextInput,
@@ -20,30 +21,27 @@ import { buildFallbackLead, isFallbackAppTestingEnabled } from './fallbackPickup
 import LiveSessionMap from '../../components/jobs/LiveSessionMap';
 import SlideToConfirmButton from '../../components/ui/SlideToConfirmButton';
 
+const SATELLITE_HYBRID_STYLE = 'mapbox://styles/mapbox/satellite-streets-v12';
+
 const EXPIRY_FEEDBACK_OPTIONS = [
   {
     value: 'system_cancelled_while_en_route',
-    label: 'I was already on the way, but the system cancelled it automatically',
-    priority: 'high',
+    label: 'I was on the way when it expired',
   },
   {
     value: 'no_warning_notifications',
-    label: 'I did not receive the warning notifications',
-    priority: 'high',
+    label: 'I did not get warning alerts',
   },
   {
     value: 'could_not_take_job',
-    label: 'I was unable to take this job',
-    priority: 'high',
+    label: 'I could not take this job',
   },
   {
     value: 'other_reason',
     label: 'Other reason',
-    priority: 'normal',
   },
 ] as const;
 
-// ─── Types ────────────────────────────────────────────────────────────────────
 interface PickupAssessmentPayload {
   leadId: string;
   items: LeadOrderItem[];
@@ -60,52 +58,27 @@ interface BookingRequestScreenProps {
   onDeclined: (message?: string) => void;
 }
 
-interface MaterialCategory {
-  name: string;
-  items: LeadOrderItem[];
-  color: string;
-  icon: keyof typeof MaterialIcons.glyphMap;
-  previewImage?: string;
-}
+type Coordinate = { latitude: number; longitude: number };
 
-// ─── Helpers ─────────────────────────────────────────────────────────────────
-const CATEGORY_COLORS: Record<string, string> = {
-  metal: '#14532D',
-  metals: '#14532D',
-  plastic: '#0369A1',
-  plastics: '#0369A1',
-  paper: '#854D0E',
-  papers: '#854D0E',
-  glass: '#6D28D9',
-  electronic: '#7C3AED',
-  electronics: '#7C3AED',
-  rubber: '#9A3412',
-  textile: '#0F766E',
-  default: '#475569',
+const toFiniteNumber = (value: unknown, fallback = 0) => {
+  const parsed = typeof value === 'number' ? value : Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
 };
 
-const getCategoryColor = (cat: string): string =>
-  CATEGORY_COLORS[cat.toLowerCase()] ?? CATEGORY_COLORS.default;
+const formatCurrency = (value: number) => `Rs ${Math.round(value).toLocaleString('en-IN')}`;
 
-const getCategoryIcon = (cat: string): keyof typeof MaterialIcons.glyphMap => {
-  const lc = cat.toLowerCase();
-  if (lc === 'metal' || lc === 'metals') return 'hardware';
-  if (lc === 'plastic' || lc === 'plastics') return 'local-drink';
-  if (lc === 'paper' || lc === 'papers') return 'description';
-  if (lc === 'glass') return 'wine-bar';
-  if (lc === 'electronic' || lc === 'electronics') return 'electrical-services';
-  if (lc === 'rubber') return 'settings';
-  if (lc === 'textile') return 'dry-cleaning';
-  return 'category';
+const formatDistance = (value: number) => {
+  if (!Number.isFinite(value) || value <= 0) return '0 km';
+  return value < 1 ? `${Math.round(value * 1000)} m` : `${value.toFixed(1)} km`;
 };
 
-const formatCurrency = (value: number) => `₹${Math.round(value).toLocaleString('en-IN')}`;
+const formatMinutes = (value: number) => {
+  if (!Number.isFinite(value) || value <= 0) return 'Nearby';
+  return `${Math.max(1, Math.round(value))} mins away`;
+};
 
-const haversineDistanceKm = (
-  pointA: { latitude: number; longitude: number },
-  pointB: { latitude: number; longitude: number },
-) => {
-  const R = 6371;
+const haversineDistanceKm = (pointA: Coordinate, pointB: Coordinate) => {
+  const radius = 6371;
   const dLat = ((pointB.latitude - pointA.latitude) * Math.PI) / 180;
   const dLng = ((pointB.longitude - pointA.longitude) * Math.PI) / 180;
   const lat1 = (pointA.latitude * Math.PI) / 180;
@@ -113,10 +86,64 @@ const haversineDistanceKm = (
   const a =
     Math.sin(dLat / 2) * Math.sin(dLat / 2) +
     Math.sin(dLng / 2) * Math.sin(dLng / 2) * Math.cos(lat1) * Math.cos(lat2);
-  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return radius * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 };
 
-// ─── Component ────────────────────────────────────────────────────────────────
+const buildAStarRouteCoordinates = (start: Coordinate | null, end: Coordinate | null): [number, number][] => {
+  if (!start || !end) return [];
+
+  const gridSize = 16;
+  const startNode = { x: 0, y: 0 };
+  const endNode = { x: gridSize, y: gridSize };
+  const nodeKey = (x: number, y: number) => `${x}:${y}`;
+  const heuristic = (x: number, y: number) => Math.hypot(endNode.x - x, endNode.y - y);
+  const open = [{ ...startNode, g: 0, f: heuristic(0, 0), parent: '' }];
+  const cameFrom = new Map<string, string>();
+  const bestCost = new Map<string, number>([[nodeKey(0, 0), 0]]);
+  const closed = new Set<string>();
+
+  while (open.length) {
+    open.sort((a, b) => a.f - b.f);
+    const current = open.shift()!;
+    const currentKey = nodeKey(current.x, current.y);
+    if (closed.has(currentKey)) continue;
+    closed.add(currentKey);
+    if (current.x === endNode.x && current.y === endNode.y) break;
+
+    for (const [dx, dy] of [[1, 0], [0, 1], [1, 1], [1, -1], [0, -1], [-1, 1]]) {
+      const nx = current.x + dx;
+      const ny = current.y + dy;
+      if (nx < 0 || ny < 0 || nx > gridSize || ny > gridSize) continue;
+      const nextKey = nodeKey(nx, ny);
+      const moveCost = dx !== 0 && dy !== 0 ? 1.414 : 1;
+      const nextCost = current.g + moveCost;
+      if (nextCost >= (bestCost.get(nextKey) ?? Number.POSITIVE_INFINITY)) continue;
+      bestCost.set(nextKey, nextCost);
+      cameFrom.set(nextKey, currentKey);
+      open.push({ x: nx, y: ny, g: nextCost, f: nextCost + heuristic(nx, ny), parent: currentKey });
+    }
+  }
+
+  const nodes: { x: number; y: number }[] = [];
+  let cursor = nodeKey(endNode.x, endNode.y);
+  while (cursor) {
+    const [x, y] = cursor.split(':').map(Number);
+    nodes.unshift({ x, y });
+    if (cursor === nodeKey(startNode.x, startNode.y)) break;
+    cursor = cameFrom.get(cursor) || '';
+  }
+
+  const resolvedNodes = nodes.length >= 2 ? nodes : [startNode, endNode];
+  return resolvedNodes.map((node) => {
+    const tLng = node.x / gridSize;
+    const tLat = node.y / gridSize;
+    return [
+      start.longitude + (end.longitude - start.longitude) * tLng,
+      start.latitude + (end.latitude - start.latitude) * tLat,
+    ];
+  });
+};
+
 const BookingRequestScreen: React.FC<BookingRequestScreenProps> = ({
   leadId,
   fallbackBooking,
@@ -127,22 +154,19 @@ const BookingRequestScreen: React.FC<BookingRequestScreenProps> = ({
   const [lead, setLead] = useState<LeadDetailsResponse | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isRejecting, setIsRejecting] = useState(false);
-  const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [showDeclineModal, setShowDeclineModal] = useState(false);
   const [remaining, setRemaining] = useState(0);
-  const [vendorLocation, setVendorLocation] = useState<{ latitude: number; longitude: number } | null>(null);
+  const [vendorLocation, setVendorLocation] = useState<Coordinate | null>(null);
   const [locationPermission, setLocationPermission] = useState<'loading' | 'granted' | 'denied'>('loading');
-  const [locationAccuracy, setLocationAccuracy] = useState<number | null>(null);
-  const [isLocating, setIsLocating] = useState(false);
   const [showExpiredFeedbackModal, setShowExpiredFeedbackModal] = useState(false);
-  const [selectedExpiredReason, setSelectedExpiredReason] = useState<(typeof EXPIRY_FEEDBACK_OPTIONS)[number]['value'] | null>(null);
+  const [selectedExpiredReason, setSelectedExpiredReason] =
+    useState<(typeof EXPIRY_FEEDBACK_OPTIONS)[number]['value'] | null>(null);
   const [otherExpiredReason, setOtherExpiredReason] = useState('');
   const [supportFeedbackQuestionId, setSupportFeedbackQuestionId] = useState<number | null>(null);
   const [isSubmittingExpiredFeedback, setIsSubmittingExpiredFeedback] = useState(false);
 
   const isExpired = remaining <= 0;
 
-  // ── Load lead ───────────────────────────────────────────────────────────────
   useEffect(() => {
     const loadLead = async () => {
       setIsLoading(true);
@@ -163,10 +187,9 @@ const BookingRequestScreen: React.FC<BookingRequestScreenProps> = ({
         setIsLoading(false);
       }
     };
-    loadLead();
+    void loadLead();
   }, [fallbackBooking, leadId, onBack]);
 
-  // ── Countdown timer ─────────────────────────────────────────────────────────
   useEffect(() => {
     if (!lead || isExpired) return;
     const timer = setInterval(() => {
@@ -175,9 +198,7 @@ const BookingRequestScreen: React.FC<BookingRequestScreenProps> = ({
     return () => clearInterval(timer);
   }, [isExpired, lead]);
 
-  // ── Location ────────────────────────────────────────────────────────────────
   const requestPreciseLocation = useCallback(async () => {
-    setIsLocating(true);
     try {
       const permission = await Location.requestForegroundPermissionsAsync();
       if (permission.status !== 'granted') {
@@ -191,12 +212,9 @@ const BookingRequestScreen: React.FC<BookingRequestScreenProps> = ({
         mayShowUserSettingsDialog: true,
       });
       setVendorLocation({ latitude: position.coords.latitude, longitude: position.coords.longitude });
-      setLocationAccuracy(position.coords.accuracy ?? null);
     } catch {
       setLocationPermission('denied');
       setVendorLocation(null);
-    } finally {
-      setIsLocating(false);
     }
   }, []);
 
@@ -213,89 +231,80 @@ const BookingRequestScreen: React.FC<BookingRequestScreenProps> = ({
         setSupportFeedbackQuestionId(null);
       }
     };
-
     void loadSupportFeedbackQuestion();
   }, []);
 
-  // ── Derived values ─────────────────────────────────────────────────────────
   const countdown = useMemo(() => {
     const mm = Math.floor(remaining / 60).toString().padStart(2, '0');
     const ss = Math.floor(remaining % 60).toString().padStart(2, '0');
     return `${mm}:${ss}`;
   }, [remaining]);
 
-  const totalQty = useMemo(
-    () => (lead ? lead.order.items.reduce((s, i) => s + Number(i.quantity || 0), 0) : 0),
-    [lead],
-  );
-
-  const scheduledLabel = useMemo(() => {
-    const iso = lead?.order.scheduled_at;
-    if (!iso) return 'Today';
-    const scheduled = new Date(iso);
-    const today = new Date();
-    if (scheduled.toDateString() === today.toDateString()) return 'Today';
-    return scheduled.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
+  const customerLocation = useMemo<Coordinate | null>(() => {
+    if (!lead) return null;
+    const latitude = toFiniteNumber(lead.pickup_lat, Number.NaN);
+    const longitude = toFiniteNumber(lead.pickup_lng, Number.NaN);
+    return Number.isFinite(latitude) && Number.isFinite(longitude) ? { latitude, longitude } : null;
   }, [lead]);
 
-  const isPreciseLocation = useMemo(
-    () => locationPermission === 'granted' && locationAccuracy !== null && locationAccuracy <= 100,
-    [locationPermission, locationAccuracy],
+  const totalWeight = useMemo(() => {
+    const serverWeight = toFiniteNumber(lead?.order.total_weight, 0);
+    const itemWeight = lead?.order.items.reduce((sum, item) => sum + toFiniteNumber(item.quantity, 0), 0) || 0;
+    return serverWeight > 0 ? serverWeight : itemWeight;
+  }, [lead]);
+
+  const totalWeightLabel = useMemo(
+    () => `${Number(totalWeight.toFixed(2)).toLocaleString('en-IN')} kg`,
+    [totalWeight],
   );
 
-  const hasValidPickupCoordinates = useMemo(
-    () => lead ? Number.isFinite(Number(lead.pickup_lat)) && Number.isFinite(Number(lead.pickup_lng)) : false,
-    [lead],
-  );
-
-  const normalizedPickupLocation = useMemo(
-    () => lead && hasValidPickupCoordinates ? { latitude: Number(lead.pickup_lat), longitude: Number(lead.pickup_lng) } : null,
-    [lead, hasValidPickupCoordinates],
-  );
-
-  const approxDistanceKm = useMemo(() => {
+  const distanceKm = useMemo(() => {
     if (!lead) return 0;
-    if (!normalizedPickupLocation) return Number(lead.distance_km || 0);
-    if (!vendorLocation) return lead.distance_km;
-    return haversineDistanceKm(vendorLocation, normalizedPickupLocation);
-  }, [lead, normalizedPickupLocation, vendorLocation]);
+    if (vendorLocation && customerLocation) return haversineDistanceKm(vendorLocation, customerLocation);
+    return toFiniteNumber(lead.distance_km, 0);
+  }, [customerLocation, lead, vendorLocation]);
 
-  // ── Material categories (grouped from lead items) ──────────────────────────
-  const categories = useMemo<MaterialCategory[]>(() => {
-    if (!lead) return [];
-    const catMap = new Map<string, MaterialCategory>();
-    lead.order.items.forEach((item) => {
-      const displayName = item.category || 'Other';
-      if (!catMap.has(displayName)) {
-        catMap.set(displayName, {
-          name: displayName,
-          items: [],
-          color: getCategoryColor(displayName),
-          icon: getCategoryIcon(displayName),
-          previewImage: undefined,
-        });
-      }
-      const entry = catMap.get(displayName)!;
-      entry.items.push(item);
-      if (!entry.previewImage && item.image_url) {
-        entry.previewImage = item.image_url;
-      }
-    });
-    return Array.from(catMap.values());
-  }, [lead]);
+  const routeCoordinates = useMemo(
+    () => buildAStarRouteCoordinates(vendorLocation, customerLocation),
+    [customerLocation, vendorLocation],
+  );
 
-  // Auto-select the only category if there's just one
-  useEffect(() => {
-    if (categories.length === 1) {
-      setSelectedCategory(categories[0].name);
+  const estimatedMinutes = useMemo(() => {
+    if (lead?.estimated_minutes) return lead.estimated_minutes;
+    return distanceKm ? (distanceKm / 25) * 60 : 0;
+  }, [distanceKm, lead?.estimated_minutes]);
+
+  const customerAvatarUrl = useMemo(() => {
+    const customer = lead?.customer as any;
+    return customer?.image || customer?.avatar_url || customer?.profile_image || customer?.profileImage || '';
+  }, [lead?.customer]);
+
+  const customerNote = (lead?.customer_note || '').trim();
+
+  const openRouteInMaps = useCallback(async () => {
+    if (!customerLocation) {
+      Alert.alert('Pickup location unavailable', 'This booking does not have map coordinates yet.');
+      return;
     }
-  }, [categories]);
 
-  // ── Actions ────────────────────────────────────────────────────────────────
+    const destination = `${customerLocation.latitude},${customerLocation.longitude}`;
+    const origin = vendorLocation ? `${vendorLocation.latitude},${vendorLocation.longitude}` : '';
+    const url = origin
+      ? `https://www.google.com/maps/dir/?api=1&origin=${origin}&destination=${destination}&travelmode=driving`
+      : `https://www.google.com/maps/search/?api=1&query=${destination}`;
+
+    try {
+      await Linking.openURL(url);
+    } catch {
+      Alert.alert('Unable to open maps', 'Please try again from your maps app.');
+    }
+  }, [customerLocation, vendorLocation]);
+
   const handleReject = async () => {
+    if (!lead) return;
     setIsRejecting(true);
     try {
-      await ApiService.rejectLead(lead!.lead_id);
+      await ApiService.rejectLead(lead.lead_id);
       setShowDeclineModal(false);
       onDeclined('Booking declined');
     } catch {
@@ -316,14 +325,12 @@ const BookingRequestScreen: React.FC<BookingRequestScreenProps> = ({
       Alert.alert('Support unavailable', 'Please try again in a moment.');
       return;
     }
-
     if (!selectedExpiredReason) {
       Alert.alert('Select a reason', 'Please choose one reason before continuing.');
       return;
     }
-
     if (selectedExpiredReason === 'other_reason' && !otherExpiredReason.trim()) {
-      Alert.alert('Add details', 'Please share a short note for the support team.');
+      Alert.alert('Add details', 'Please share a short note for support.');
       return;
     }
 
@@ -340,8 +347,6 @@ const BookingRequestScreen: React.FC<BookingRequestScreenProps> = ({
         ],
       });
       setShowExpiredFeedbackModal(false);
-      setSelectedExpiredReason(null);
-      setOtherExpiredReason('');
       onDeclined('Expired request feedback submitted.');
     } catch {
       Alert.alert('Unable to submit', 'Please try again in a moment.');
@@ -361,7 +366,6 @@ const BookingRequestScreen: React.FC<BookingRequestScreenProps> = ({
     });
   };
 
-  // ── Loading state ──────────────────────────────────────────────────────────
   if (isLoading || !lead) {
     return (
       <View style={styles.loaderWrap}>
@@ -371,480 +375,230 @@ const BookingRequestScreen: React.FC<BookingRequestScreenProps> = ({
     );
   }
 
-  // ── Render ─────────────────────────────────────────────────────────────────
   return (
+    <SafeAreaView style={styles.safeArea}>
     <View style={styles.container}>
-      {/* ── Header ─────────────────────────────────────────────────────────── */}
-      <View style={styles.header}>
-        <View style={styles.headerTop}>
-          <TouchableOpacity onPress={onBack} style={styles.headerIconButton}>
-            <Ionicons name="arrow-back" size={22} color="#FFFFFF" />
+      <ScrollView
+        contentContainerStyle={styles.content}
+        showsVerticalScrollIndicator={false}
+      >
+        <View style={styles.header}>
+          <TouchableOpacity onPress={onBack} style={styles.backButton} accessibilityRole="button">
+            <Ionicons name="arrow-back" size={25} color="#06351F" />
           </TouchableOpacity>
 
-          <View style={styles.headerTitleWrap}>
-            <Text style={styles.headerTitle}>Booking Request</Text>
-            <View style={styles.headerMetaRow}>
-              <View style={styles.statusBadge}>
-                <View style={styles.statusDot} />
-                <Text style={styles.statusBadgeText}>New request</Text>
-              </View>
-              <View style={[styles.timerBadge, isExpired && styles.timerBadgeExpired]}>
-                <MaterialIcons name="schedule" size={14} color={isExpired ? '#7F1D1D' : '#FDE68A'} />
-                <Text style={[styles.timerBadgeText, isExpired && styles.timerBadgeTextExpired]}>
-                  {isExpired ? 'Expired' : countdown}
-                </Text>
-              </View>
-            </View>
-          </View>
-
-          <TouchableOpacity style={styles.headerIconButtonSecondary}>
-            <Ionicons name="ellipsis-vertical" size={18} color="#FFFFFF" />
-          </TouchableOpacity>
-        </View>
-
-        <View style={styles.heroSummary}>
-          <View style={styles.summaryBlock}>
-            <Text style={styles.summaryLabel}>Distance</Text>
-            <Text style={styles.summaryValue}>{lead.distance_km.toFixed(1)} km</Text>
-            <Text style={styles.summarySubtext}>{lead.estimated_minutes} mins away</Text>
-          </View>
-          <View style={styles.summaryDivider} />
-          <View style={styles.summaryBlock}>
-            <Text style={styles.summaryLabel}>Estimate</Text>
-            <Text style={styles.summaryValue}>
-              {formatCurrency(lead.order.estimated_value_min)} – {formatCurrency(lead.order.estimated_value_max)}
+          <View style={styles.titleBlock}>
+            <Text style={styles.title} numberOfLines={1} adjustsFontSizeToFit>
+              Booking Request
             </Text>
-            <Text style={styles.summarySubtext}>{lead.order.items.length} material lines</Text>
-          </View>
-        </View>
-      </View>
-
-      {/* ── Scrollable content ────────────────────────────────────────────── */}
-      <ScrollView contentContainerStyle={styles.content}>
-        {/* Location / map card */}
-        <View style={styles.locationCard}>
-          <View style={styles.sectionHeader}>
-            <View style={styles.sectionIconWrap}>
-              <MaterialIcons name="place" size={18} color="#14532D" />
-            </View>
-            <View style={styles.sectionCopy}>
-              <Text style={styles.sectionTitle}>Pickup map match</Text>
-              <Text style={styles.sectionSubtitle}>Customer + your live precise location</Text>
-            </View>
-            {lead.is_urgent ? (
-              <View style={styles.priorityBadge}>
-                <Text style={styles.priorityBadgeText}>⏱ Urgent</Text>
-              </View>
-            ) : null}
-          </View>
-
-          {locationPermission === 'denied' ? (
-            <View style={styles.permissionCard}>
-              <MaterialIcons name="gps-off" size={20} color="#B45309" />
-              <View style={styles.permissionCopy}>
-                <Text style={styles.permissionTitle}>Precise location required</Text>
-                <Text style={styles.permissionText}>Enable precise GPS to compare your position with the pickup pin.</Text>
-              </View>
-              <TouchableOpacity style={styles.permissionButton} onPress={() => Linking.openSettings()}>
-                <Text style={styles.permissionButtonText}>Open settings</Text>
-              </TouchableOpacity>
-            </View>
-          ) : null}
-
-          {locationPermission === 'granted' && !isPreciseLocation ? (
-            <View style={styles.permissionCard}>
-              <MaterialIcons name="my-location" size={20} color="#B45309" />
-              <View style={styles.permissionCopy}>
-                <Text style={styles.permissionTitle}>Use precise location</Text>
-                <Text style={styles.permissionText}>
-                  Current accuracy is {(locationAccuracy || 0).toFixed(0)}m. Retry with precise GPS enabled.
-                </Text>
-              </View>
-              <TouchableOpacity style={styles.permissionButton} onPress={() => void requestPreciseLocation()}>
-                <Text style={styles.permissionButtonText}>Retry</Text>
-              </TouchableOpacity>
-            </View>
-          ) : null}
-
-          {locationPermission === 'granted' && !normalizedPickupLocation ? (
-            <View style={styles.permissionCard}>
-              <MaterialIcons name="location-off" size={20} color="#B45309" />
-              <View style={styles.permissionCopy}>
-                <Text style={styles.permissionTitle}>Pickup location unavailable</Text>
-                <Text style={styles.permissionText}>This order does not have valid pickup coordinates yet.</Text>
-              </View>
-            </View>
-          ) : null}
-
-          {locationPermission === 'granted' && isPreciseLocation && normalizedPickupLocation ? (
-            <>
-              <View style={styles.mapWrap}>
-                <LiveSessionMap
-                  customerLocation={normalizedPickupLocation}
-                  vendorLocation={vendorLocation || undefined}
-                  height={250}
-                  label={`Approx ${approxDistanceKm.toFixed(1)} km • accuracy ${Math.round(locationAccuracy || 0)}m`}
-                />
-              </View>
-              <View style={styles.mapMetaRow}>
-                <View style={styles.mapMetaPill}>
-                  <View style={[styles.markerDot, { backgroundColor: '#16A34A' }]} />
-                  <Text style={styles.mapMetaText}>Customer pin</Text>
-                </View>
-                <View style={styles.mapMetaPill}>
-                  <View style={[styles.markerDot, { backgroundColor: '#2563EB' }]} />
-                  <Text style={styles.mapMetaText}>Your marker</Text>
-                </View>
-                <View style={styles.mapMetaPill}>
-                  <MaterialIcons name="route" size={14} color="#0EA5E9" />
-                  <Text style={styles.mapMetaText}>~{approxDistanceKm.toFixed(1)} km</Text>
-                </View>
-              </View>
-            </>
-          ) : null}
-
-          {isLocating ? (
-            <View style={styles.locatingRow}>
-              <ActivityIndicator size="small" color="#166534" />
-              <Text style={styles.locatingText}>Getting your precise location...</Text>
-            </View>
-          ) : null}
-        </View>
-
-        {/* Privacy info */}
-        <View style={styles.infoCard}>
-          <MaterialIcons name="verified-user" size={18} color="#166534" />
-          <View style={styles.infoCopy}>
-            <Text style={styles.infoTitle}>Customer privacy protected</Text>
-            <Text style={styles.infoText}>
-              Contact details stay masked until you accept. This keeps request handling committed and secure.
-            </Text>
-          </View>
-        </View>
-
-        {/* Customer card */}
-        <View style={styles.surfaceCard}>
-          <View style={styles.sectionHeader}>
-            <View style={styles.sectionIconWrapMuted}>
-              <MaterialIcons name="person" size={18} color="#166534" />
-            </View>
-            <View style={styles.sectionCopy}>
-              <Text style={styles.sectionTitle}>Customer card</Text>
-              <Text style={styles.sectionSubtitle}>Limited information before acceptance</Text>
-            </View>
-            <View style={styles.lockCircle}>
-              <MaterialIcons name="lock" size={14} color="#64748B" />
+            <View style={styles.statusRow}>
+              <View style={styles.statusDot} />
+              <Text style={styles.statusText}>New pickup request</Text>
             </View>
           </View>
 
-          <View style={styles.customerCard}>
-            <View style={styles.customerTopRow}>
-              <View style={styles.customerAvatar}>
-                <Text style={styles.customerAvatarText}>{lead.customer.name.charAt(0).toUpperCase()}</Text>
-              </View>
-              <View style={styles.customerMeta}>
-                <Text style={styles.customerName}>{lead.customer.name}</Text>
-                <Text style={styles.customerSubtext}>Phone number will unlock after acceptance</Text>
-              </View>
-              <View style={styles.customerRating}>
-                <MaterialIcons name="star" size={14} color="#F59E0B" />
-                <Text style={styles.customerRatingText}>{lead.customer.rating.toFixed(1)}</Text>
-              </View>
-            </View>
-            <View style={styles.lockedPanel}>
-              <MaterialIcons name="lock" size={18} color="#64748B" />
-              <View style={styles.lockedCopy}>
-                <Text style={styles.lockedTitle}>{lead.customer.masked_phone}</Text>
-                <Text style={styles.lockedText}>Accept the booking to reveal the contact number</Text>
-              </View>
-            </View>
-            <View style={styles.customerMetaRow}>
-              <View style={styles.customerMetaPill}>
-                <MaterialIcons name="history" size={14} color="#64748B" />
-                <Text style={styles.customerMetaPillText}>{lead.customer.total_orders} previous orders</Text>
-              </View>
-              {lead.customer.is_verified ? (
-                <View style={styles.customerMetaPill}>
-                  <MaterialIcons name="verified" size={14} color="#16A34A" />
-                  <Text style={styles.customerMetaPillText}>Verified</Text>
-                </View>
-              ) : null}
-            </View>
-          </View>
-        </View>
-
-        {/* Order summary */}
-        <View style={styles.surfaceCard}>
-          <View style={styles.sectionHeader}>
-            <View style={styles.sectionIconWrap}>
-              <MaterialIcons name="recycling" size={18} color="#14532D" />
-            </View>
-            <View style={styles.sectionCopy}>
-              <Text style={styles.sectionTitle}>Order summary</Text>
-              <Text style={styles.sectionSubtitle}>Review the material mix before committing</Text>
-            </View>
-          </View>
-
-          <View style={styles.materialHero}>
-            <View style={styles.materialHeroTop}>
-              <Text style={styles.materialHeroTitle}>{lead.order.items[0]?.product_name || 'Material mix'}</Text>
-              {lead.is_urgent ? (
-                <View style={styles.priorityBadgeSoft}>
-                  <Text style={styles.priorityBadgeSoftText}>High priority</Text>
-                </View>
-              ) : null}
-            </View>
-            <Text style={styles.materialHeroSubtext}>
-              Estimated weight {totalQty} kg across requested material lines
-            </Text>
-          </View>
-
-          <View style={styles.summaryList}>
-            <View style={styles.summaryListRow}>
-              <MaterialIcons name="schedule" size={18} color="#64748B" />
-              <Text style={styles.summaryListLabel}>Pickup date</Text>
-              <Text style={styles.summaryListValue}>{scheduledLabel}</Text>
-            </View>
-            <View style={styles.summaryListRow}>
-              <MaterialIcons name="payments" size={18} color="#64748B" />
-              <Text style={styles.summaryListLabel}>Payment method</Text>
-              <View style={styles.cashBadge}>
-                <Text style={styles.cashBadgeText}>Cash</Text>
-              </View>
-            </View>
-          </View>
-
-          <View style={styles.estimatePanel}>
-            <Text style={styles.estimateLabel}>Estimated value</Text>
-            <Text style={styles.estimateValue}>
-              {formatCurrency(lead.order.estimated_value_min)} – {formatCurrency(lead.order.estimated_value_max)}
-            </Text>
-          </View>
-        </View>
-
-        {/* ── Material Categories (new) ─────────────────────────────────── */}
-        <View style={styles.surfaceCard}>
-          <View style={styles.sectionHeader}>
-            <View style={styles.sectionIconWrap}>
-              <MaterialIcons name="inventory-2" size={18} color="#14532D" />
-            </View>
-            <View style={styles.sectionCopy}>
-              <Text style={styles.sectionTitle}>Available Materials</Text>
-              <Text style={styles.sectionSubtitle}>
-                {categories.length > 1 ? 'Tap a category to browse items' : 'Material list and current rate band'}
+          <View style={[styles.timerPill, isExpired && styles.timerPillExpired]}>
+            <MaterialIcons name="schedule" size={27} color={isExpired ? '#B91C1C' : '#06351F'} />
+            <View>
+              <Text style={[styles.timerValue, isExpired && styles.timerValueExpired]}>
+                {isExpired ? 'Expired' : countdown}
               </Text>
+              <Text style={styles.timerLabel}>Time left</Text>
             </View>
           </View>
+        </View>
 
-          {/* Category cards — horizontal scroll */}
-          {categories.length > 1 ? (
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              style={styles.categoryScroll}
-              contentContainerStyle={styles.categoryScrollContent}
+        <View style={styles.requestCard}>
+          <View style={styles.customerRow}>
+            {customerAvatarUrl ? (
+              <Image source={{ uri: customerAvatarUrl }} style={styles.avatarImage} />
+            ) : (
+              <View style={styles.avatarPlaceholder}>
+                <Text style={styles.avatarLetter}>
+                  {(lead.customer.name || 'C').trim().charAt(0).toUpperCase()}
+                </Text>
+              </View>
+            )}
+            <View style={styles.customerCopy}>
+              <Text style={styles.customerName} numberOfLines={1}>
+                {lead.customer.name || 'Customer'}
+              </Text>
+              <View style={styles.ratingRow}>
+                <MaterialIcons name="star" size={19} color="#FBBF24" />
+                <Text style={styles.ratingText}>{toFiniteNumber(lead.customer.rating, 4.8).toFixed(1)}</Text>
+                <Text style={styles.reviewText}>({lead.customer.total_orders} bookings)</Text>
+              </View>
+            </View>
+            <TouchableOpacity style={styles.contactButton} activeOpacity={0.8}>
+              <MaterialIcons name="call" size={20} color="#067A3D" />
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.contactButton} activeOpacity={0.8}>
+              <MaterialIcons name="chat" size={20} color="#067A3D" />
+            </TouchableOpacity>
+          </View>
+
+          <View style={styles.addressBlock}>
+            <View style={styles.addressTopRow}>
+              <View style={styles.addressMarkerOuter}>
+                <View style={styles.addressMarkerInner} />
+              </View>
+              <Text style={styles.addressLabel}>Pickup address</Text>
+            </View>
+            <Text style={styles.addressText} numberOfLines={5}>
+              {lead.pickup_address || 'Pickup location will be shared soon'}
+            </Text>
+            <TouchableOpacity
+              style={styles.mapsButton}
+              onPress={() => void openRouteInMaps()}
+              activeOpacity={0.85}
+              accessibilityRole="button"
             >
-              {categories.map((cat) => {
-                const isSelected = selectedCategory === cat.name;
-                return (
-                  <TouchableOpacity
-                    key={cat.name}
-                    style={[styles.categoryCard, isSelected && { borderColor: cat.color, backgroundColor: `${cat.color}10` }]}
-                    onPress={() => setSelectedCategory(isSelected ? null : cat.name)}
-                    activeOpacity={0.78}
-                    accessibilityRole="button"
-                    accessibilityLabel={`${cat.name} category, ${cat.items.length} items`}
-                  >
-                    {cat.previewImage ? (
-                      <Image source={{ uri: cat.previewImage }} style={styles.categoryCardImage} />
-                    ) : (
-                      <View style={[styles.categoryCardImagePlaceholder, { backgroundColor: `${cat.color}18` }]}>
-                        <MaterialIcons name={cat.icon} size={30} color={cat.color} />
-                      </View>
-                    )}
-                    <Text
-                      style={[styles.categoryCardName, isSelected && { color: cat.color }]}
-                      numberOfLines={1}
-                    >
-                      {cat.name}
-                    </Text>
-                    <View style={[styles.categoryCountBadge, isSelected && { backgroundColor: cat.color }]}>
-                      <Text style={[styles.categoryCountText, isSelected && { color: '#FFFFFF' }]}>
-                        {cat.items.length}
-                      </Text>
-                    </View>
-                  </TouchableOpacity>
-                );
-              })}
-            </ScrollView>
-          ) : null}
+              <MaterialIcons name="navigation" size={19} color="#067A3D" />
+              <Text style={styles.mapsButtonText}>Open in Maps</Text>
+            </TouchableOpacity>
+          </View>
 
-          {/* Products for selected category (or all items if single category) */}
-          {selectedCategory ? (
-            <View style={styles.productList}>
-              {(categories.find((c) => c.name === selectedCategory)?.items ?? []).map((item) => {
-                const catColor = getCategoryColor(item.category || selectedCategory);
-                return (
-                  <View key={String(item.product_id)} style={styles.productRow}>
-                    {item.image_url ? (
-                      <Image source={{ uri: item.image_url }} style={styles.productImage} />
-                    ) : (
-                      <View style={[styles.productImagePlaceholder, { backgroundColor: `${catColor}14` }]}>
-                        <MaterialIcons name={getCategoryIcon(item.category || selectedCategory)} size={22} color={catColor} />
-                      </View>
-                    )}
-                    <View style={styles.productMeta}>
-                      <Text style={styles.productName} numberOfLines={1}>{item.product_name}</Text>
-                      <Text style={styles.productQty}>Est. {item.quantity} {item.unit}</Text>
-                    </View>
-                    <View style={styles.productRateWrap}>
-                      <Text style={styles.productRate}>₹{item.min_rate}–₹{item.max_rate}</Text>
-                      <Text style={styles.productRateUnit}>per {item.unit}</Text>
-                    </View>
-                  </View>
-                );
-              })}
+          <View style={styles.divider} />
+
+          <View style={styles.metricsGrid}>
+            <MetricTile
+              wide
+              icon="currency-rupee"
+              label="Estimated Earnings"
+              value={`${formatCurrency(lead.order.estimated_value_min)} - ${formatCurrency(lead.order.estimated_value_max)}`}
+              detail={`${lead.order.items.length} material lines`}
+            />
+            <View style={styles.metricPair}>
+              <MetricTile
+                icon="place"
+                label="Distance"
+                value={formatDistance(distanceKm)}
+                detail={formatMinutes(estimatedMinutes)}
+              />
+              <MetricTile
+                icon="fork-right"
+                label="Trip Type"
+                value="Pickup Only"
+                detail="Customer pickup"
+              />
             </View>
-          ) : categories.length > 1 ? (
-            <View style={styles.categoryTapHint}>
-              <MaterialIcons name="touch-app" size={16} color="#94A3B8" />
-              <Text style={styles.categoryTapHintText}>Select a category above to view items</Text>
-            </View>
+          </View>
+        </View>
+
+        <View style={styles.mapCard}>
+          {customerLocation ? (
+            <LiveSessionMap
+              customerLocation={customerLocation}
+              vendorLocation={vendorLocation || undefined}
+              height={255}
+              mapStyleURL={SATELLITE_HYBRID_STYLE}
+              routeCoordinates={routeCoordinates}
+              routeColor="#078842"
+              routeDashed={false}
+              showOverlay={false}
+            />
           ) : (
-            /* Fallback: single category, show all items directly */
-            <View style={styles.productList}>
-              {lead.order.items.map((item) => {
-                const catColor = getCategoryColor(item.category || 'Other');
-                return (
-                  <View key={String(item.product_id)} style={styles.productRow}>
-                    {item.image_url ? (
-                      <Image source={{ uri: item.image_url }} style={styles.productImage} />
-                    ) : (
-                      <View style={[styles.productImagePlaceholder, { backgroundColor: `${catColor}14` }]}>
-                        <MaterialIcons name={getCategoryIcon(item.category || 'Other')} size={22} color={catColor} />
-                      </View>
-                    )}
-                    <View style={styles.productMeta}>
-                      <Text style={styles.productName} numberOfLines={1}>{item.product_name}</Text>
-                      <Text style={styles.productQty}>Est. {item.quantity} {item.unit}</Text>
-                    </View>
-                    <View style={styles.productRateWrap}>
-                      <Text style={styles.productRate}>₹{item.min_rate}–₹{item.max_rate}</Text>
-                      <Text style={styles.productRateUnit}>per {item.unit}</Text>
-                    </View>
-                  </View>
-                );
-              })}
+            <View style={styles.mapFallback}>
+              <MaterialIcons name="location-off" size={26} color="#64748B" />
+              <Text style={styles.mapFallbackText}>Pickup map unavailable</Text>
             </View>
           )}
+          <View style={styles.routeDistanceBadge}>
+            <Text style={styles.routeDistanceText}>
+              {formatDistance(distanceKm)} - {Math.max(1, Math.round(estimatedMinutes))} mins
+            </Text>
+          </View>
+          {locationPermission === 'denied' ? (
+            <TouchableOpacity style={styles.locationPrompt} onPress={() => Linking.openSettings()}>
+              <MaterialIcons name="gps-off" size={16} color="#B45309" />
+              <Text style={styles.locationPromptText}>Enable GPS</Text>
+            </TouchableOpacity>
+          ) : null}
         </View>
 
-        {/* Bottom spacer so content isn't hidden behind the floating sheet */}
-        <View style={{ height: 16 }} />
-      </ScrollView>
+        <View style={styles.materialsCard}>
+          <View style={styles.panelHeader}>
+            <View style={styles.panelIcon}>
+              <MaterialIcons name="inventory-2" size={23} color="#067A3D" />
+            </View>
+            <View style={styles.panelCopy}>
+              <Text style={styles.panelTitle}>Expected Materials</Text>
+              <Text style={styles.panelSubtitle}>Customer provided estimate</Text>
+            </View>
+          </View>
 
-      {/* ── Redesigned bottom action sheet ──────────────────────────────────── */}
-      <View style={styles.bottomSheet}>
-        {/* Top row: title + small Decline pill */}
-        <View style={styles.bottomSheetTopRow}>
-          <View style={styles.bottomSheetTitleWrap}>
-            <Text style={styles.bottomSheetTitle}>Confirm this booking</Text>
-            <Text style={styles.bottomSheetSubtext}>
-              {isExpired ? 'This request has expired.' : 'Slide right to accept and start assessment.'}
-            </Text>
+          <View style={styles.materialSummaryGrid}>
+            <View style={styles.materialSummaryTile}>
+              <Text style={styles.materialSummaryLabel}>Weight</Text>
+              <Text style={styles.materialSummaryValue}>{totalWeightLabel}</Text>
+            </View>
+            <View style={styles.materialSummaryTile}>
+              <Text style={styles.materialSummaryLabel}>Price</Text>
+              <Text style={styles.materialSummaryValue}>
+                {formatCurrency(lead.order.estimated_value_min)} - {formatCurrency(lead.order.estimated_value_max)}
+              </Text>
+            </View>
+            <View style={styles.materialSummaryTile}>
+              <Text style={styles.materialSummaryLabel}>Materials</Text>
+              <Text style={styles.materialSummaryValue}>{lead.order.items.length}</Text>
+            </View>
+          </View>
+
+          <View style={styles.materialList}>
+            {lead.order.items.map((item) => (
+              <MaterialRow key={String(item.product_id)} item={item} />
+            ))}
+          </View>
+        </View>
+
+        <View style={styles.noteCard}>
+          <View style={styles.panelHeader}>
+            <View style={styles.panelIcon}>
+              <MaterialIcons name="description" size={22} color="#067A3D" />
+            </View>
+            <View style={styles.panelCopy}>
+              <Text style={styles.panelTitle}>Customer Note</Text>
+              <Text style={styles.panelSubtitle}>Message from customer</Text>
+            </View>
+          </View>
+          <View style={styles.noteBody}>
+            <Text style={styles.quoteMark}>{'"'}</Text>
+            <Text style={styles.noteText}>{customerNote}</Text>
+          </View>
+        </View>
+
+        <View style={styles.actionDock}>
+          <View style={styles.slideWrap}>
+            <SlideToConfirmButton
+              label={isExpired ? 'Slide to Continue' : 'Slide to Accept Booking'}
+              onConfirm={isExpired ? handleExpiredSlideContinue : handleAccept}
+              disabled={false}
+            />
           </View>
           <TouchableOpacity
-            style={[styles.declinePill, isExpired && styles.declinePillDisabled]}
+            style={[styles.declineButton, isExpired && styles.declineButtonDisabled]}
             onPress={() => setShowDeclineModal(true)}
             disabled={isExpired}
-            accessibilityRole="button"
-            accessibilityLabel="Decline this booking"
+            activeOpacity={0.86}
           >
-            <MaterialIcons name="close" size={14} color={isExpired ? '#CBD5E1' : '#EF4444'} />
-            <Text style={[styles.declinePillText, isExpired && styles.declinePillTextDisabled]}>
-              Decline
-            </Text>
+            <MaterialIcons name="close" size={25} color={isExpired ? '#CBD5E1' : '#DC2626'} />
+            <Text style={[styles.declineText, isExpired && styles.declineTextDisabled]}>Decline</Text>
           </TouchableOpacity>
+          <Text style={styles.actionHint}>Accept to start assessment and contact the customer.</Text>
         </View>
+      </ScrollView>
 
-        {/* Slide to accept */}
-        <SlideToConfirmButton
-          label={isExpired ? 'Slide to Continue' : 'Slide to Accept Booking'}
-          onConfirm={isExpired ? handleExpiredSlideContinue : handleAccept}
-          disabled={false}
-        />
-      </View>
-
-      <Modal
+      <ExpiredFeedbackModal
         visible={showExpiredFeedbackModal}
-        transparent
-        animationType="slide"
-        onRequestClose={() => setShowExpiredFeedbackModal(false)}
-      >
-        <View style={styles.feedbackBackdrop}>
-          <View style={styles.feedbackSheet}>
-            <View style={styles.feedbackHandle} />
-            <Text style={styles.feedbackTitle}>Why was this assignment cancelled?</Text>
-            <Text style={styles.feedbackSubtitle}>Your response helps us improve dispatch quality and support.</Text>
+        selectedReason={selectedExpiredReason}
+        otherReason={otherExpiredReason}
+        isSubmitting={isSubmittingExpiredFeedback}
+        onSelectReason={setSelectedExpiredReason}
+        onChangeOtherReason={setOtherExpiredReason}
+        onSubmit={handleSubmitExpiredFeedback}
+        onClose={() => setShowExpiredFeedbackModal(false)}
+      />
 
-            <View style={styles.feedbackOptions}>
-              {EXPIRY_FEEDBACK_OPTIONS.map((option) => (
-                <TouchableOpacity
-                  key={option.value}
-                  style={[
-                    styles.feedbackOption,
-                    selectedExpiredReason === option.value && styles.feedbackOptionSelected,
-                  ]}
-                  onPress={() => setSelectedExpiredReason(option.value)}
-                  activeOpacity={0.9}
-                >
-                  <View style={styles.feedbackOptionDotWrap}>
-                    <View
-                      style={[
-                        styles.feedbackOptionDot,
-                        selectedExpiredReason === option.value && styles.feedbackOptionDotSelected,
-                      ]}
-                    />
-                  </View>
-                  <Text style={styles.feedbackOptionText}>{option.label}</Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-
-            {selectedExpiredReason === 'other_reason' ? (
-              <TextInput
-                style={styles.feedbackInput}
-                value={otherExpiredReason}
-                onChangeText={setOtherExpiredReason}
-                placeholder="Write a short note for support"
-                placeholderTextColor="#94A3B8"
-                multiline
-              />
-            ) : null}
-
-            <TouchableOpacity
-              style={[styles.feedbackSubmitButton, isSubmittingExpiredFeedback && styles.feedbackSubmitButtonDisabled]}
-              onPress={handleSubmitExpiredFeedback}
-              disabled={isSubmittingExpiredFeedback}
-              activeOpacity={0.9}
-            >
-              <Text style={styles.feedbackSubmitButtonText}>
-                {isSubmittingExpiredFeedback ? 'Submitting...' : 'Send feedback and continue'}
-              </Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={styles.feedbackCancelButton}
-              onPress={() => setShowExpiredFeedbackModal(false)}
-              activeOpacity={0.9}
-            >
-              <Text style={styles.feedbackCancelText}>Not now</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </Modal>
-
-      {/* ── Decline confirmation modal ────────────────────────────────────── */}
       <Modal
         visible={showDeclineModal}
         transparent
@@ -854,19 +608,12 @@ const BookingRequestScreen: React.FC<BookingRequestScreenProps> = ({
         <View style={styles.modalBackdrop}>
           <View style={styles.modalCard}>
             <Text style={styles.modalTitle}>Decline this request?</Text>
-            <Text style={styles.modalText}>The request will be released so another vendor can take it.</Text>
+            <Text style={styles.modalText}>It will be released to another nearby partner.</Text>
             <View style={styles.modalActions}>
-              <TouchableOpacity
-                style={styles.modalSecondaryButton}
-                onPress={() => setShowDeclineModal(false)}
-              >
+              <TouchableOpacity style={styles.modalSecondaryButton} onPress={() => setShowDeclineModal(false)}>
                 <Text style={styles.modalSecondaryText}>Keep request</Text>
               </TouchableOpacity>
-              <TouchableOpacity
-                style={styles.modalPrimaryButton}
-                onPress={handleReject}
-                disabled={isRejecting}
-              >
+              <TouchableOpacity style={styles.modalPrimaryButton} onPress={handleReject} disabled={isRejecting}>
                 <Text style={styles.modalPrimaryText}>{isRejecting ? 'Declining...' : 'Decline'}</Text>
               </TouchableOpacity>
             </View>
@@ -874,324 +621,778 @@ const BookingRequestScreen: React.FC<BookingRequestScreenProps> = ({
         </View>
       </Modal>
 
-      {/* ── Expired overlay ───────────────────────────────────────────────── */}
       {isExpired ? (
         <View pointerEvents="none" style={styles.expiredOverlay}>
           <View style={styles.expiredOverlayCard}>
             <Text style={styles.expiredOverlayTitle}>Request Expired</Text>
-            <Text style={styles.expiredOverlayText}>This booking is no longer available to accept.</Text>
+            <Text style={styles.expiredOverlayText}>This booking is no longer available.</Text>
           </View>
         </View>
       ) : null}
     </View>
+    </SafeAreaView>
   );
 };
 
-// ─── Styles ───────────────────────────────────────────────────────────────────
+function MetricTile({
+  icon,
+  label,
+  value,
+  detail,
+  wide,
+}: {
+  icon: keyof typeof MaterialIcons.glyphMap;
+  label: string;
+  value: string;
+  detail: string;
+  wide?: boolean;
+}) {
+  return (
+    <View style={[styles.metricTile, wide && styles.metricTileWide]}>
+      <View style={styles.metricIcon}>
+        <MaterialIcons name={icon} size={24} color="#067A3D" />
+      </View>
+      <Text style={styles.metricLabel} numberOfLines={1}>{label}</Text>
+      <Text style={styles.metricValue} numberOfLines={1} adjustsFontSizeToFit>{value}</Text>
+      <Text style={styles.metricDetail} numberOfLines={1}>{detail}</Text>
+    </View>
+  );
+}
+
+function MaterialRow({ item }: { item: LeadOrderItem }) {
+  const categoryColor = getCategoryColor(item.category || 'default');
+  return (
+    <View style={styles.materialRow}>
+      {item.image_url ? (
+        <Image source={{ uri: item.image_url }} style={styles.materialImage} />
+      ) : (
+        <View style={[styles.materialImageFallback, { backgroundColor: `${categoryColor}16` }]}>
+          <MaterialIcons name={getCategoryIcon(item.category || 'default')} size={28} color={categoryColor} />
+        </View>
+      )}
+      <View style={styles.materialCopy}>
+        <Text style={styles.materialName} numberOfLines={1}>{item.product_name}</Text>
+        <Text style={styles.materialQty} numberOfLines={1}>
+          {Number(item.quantity || 0).toLocaleString('en-IN')} {item.unit || 'kg'} approx
+        </Text>
+      </View>
+      <MaterialIcons name="chevron-right" size={24} color="#64748B" />
+    </View>
+  );
+}
+
+function ExpiredFeedbackModal({
+  visible,
+  selectedReason,
+  otherReason,
+  isSubmitting,
+  onSelectReason,
+  onChangeOtherReason,
+  onSubmit,
+  onClose,
+}: {
+  visible: boolean;
+  selectedReason: (typeof EXPIRY_FEEDBACK_OPTIONS)[number]['value'] | null;
+  otherReason: string;
+  isSubmitting: boolean;
+  onSelectReason: (value: (typeof EXPIRY_FEEDBACK_OPTIONS)[number]['value']) => void;
+  onChangeOtherReason: (value: string) => void;
+  onSubmit: () => void;
+  onClose: () => void;
+}) {
+  return (
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+      <View style={styles.feedbackBackdrop}>
+        <View style={styles.feedbackSheet}>
+          <View style={styles.feedbackHandle} />
+          <Text style={styles.feedbackTitle}>Why did it expire?</Text>
+          <Text style={styles.feedbackSubtitle}>A short answer helps dispatch improve.</Text>
+
+          <View style={styles.feedbackOptions}>
+            {EXPIRY_FEEDBACK_OPTIONS.map((option) => (
+              <TouchableOpacity
+                key={option.value}
+                style={[
+                  styles.feedbackOption,
+                  selectedReason === option.value && styles.feedbackOptionSelected,
+                ]}
+                onPress={() => onSelectReason(option.value)}
+                activeOpacity={0.9}
+              >
+                <View
+                  style={[
+                    styles.feedbackOptionDot,
+                    selectedReason === option.value && styles.feedbackOptionDotSelected,
+                  ]}
+                />
+                <Text style={styles.feedbackOptionText}>{option.label}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+
+          {selectedReason === 'other_reason' ? (
+            <TextInput
+              style={styles.feedbackInput}
+              value={otherReason}
+              onChangeText={onChangeOtherReason}
+              placeholder="Write a short note"
+              placeholderTextColor="#94A3B8"
+              multiline
+            />
+          ) : null}
+
+          <TouchableOpacity
+            style={[styles.feedbackSubmitButton, isSubmitting && styles.feedbackSubmitButtonDisabled]}
+            onPress={onSubmit}
+            disabled={isSubmitting}
+            activeOpacity={0.9}
+          >
+            <Text style={styles.feedbackSubmitButtonText}>
+              {isSubmitting ? 'Submitting...' : 'Send feedback'}
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity style={styles.feedbackCancelButton} onPress={onClose} activeOpacity={0.9}>
+            <Text style={styles.feedbackCancelText}>Not now</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+const getCategoryColor = (cat: string): string => {
+  const lc = cat.toLowerCase();
+  if (lc.includes('metal') || lc.includes('iron') || lc.includes('steel')) return '#14532D';
+  if (lc.includes('plastic')) return '#0369A1';
+  if (lc.includes('paper') || lc.includes('cardboard') || lc.includes('book')) return '#854D0E';
+  if (lc.includes('glass')) return '#6D28D9';
+  if (lc.includes('electronic')) return '#7C3AED';
+  return '#475569';
+};
+
+const getCategoryIcon = (cat: string): keyof typeof MaterialIcons.glyphMap => {
+  const lc = cat.toLowerCase();
+  if (lc.includes('metal') || lc.includes('iron') || lc.includes('steel')) return 'hardware';
+  if (lc.includes('plastic')) return 'local-drink';
+  if (lc.includes('paper') || lc.includes('cardboard') || lc.includes('book')) return 'description';
+  if (lc.includes('glass')) return 'wine-bar';
+  if (lc.includes('electronic')) return 'electrical-services';
+  return 'inventory-2';
+};
+
 const styles = StyleSheet.create({
-  // Layout
-  container: { flex: 1, backgroundColor: '#F4F7F5' },
-  loaderWrap: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: '#F4F7F5' },
-  loaderText: { marginTop: 12, color: '#475569' },
-
-  // Header
-  header: {
-    backgroundColor: '#166534',
-    paddingTop: 18,
+  safeArea: {
+    flex: 1,
+    backgroundColor: '#F5FBF7',
+  },
+  container: {
+    flex: 1,
+    backgroundColor: '#F5FBF7',
+  },
+  loaderWrap: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#F5FBF7',
+  },
+  loaderText: {
+    marginTop: 12,
+    color: '#475569',
+    fontWeight: '700',
+  },
+  content: {
     paddingHorizontal: 18,
-    paddingBottom: 22,
-    borderBottomLeftRadius: 28,
-    borderBottomRightRadius: 28,
+    paddingTop: 8,
+    paddingBottom: 34,
+    gap: 16,
   },
-  headerTop: { flexDirection: 'row', alignItems: 'center' },
-  headerIconButton: {
-    width: 44,
-    height: 44,
-    borderRadius: 14,
-    backgroundColor: 'rgba(255,255,255,0.16)',
+  header: {
+    minHeight: 104,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  backButton: {
+    width: 54,
+    height: 54,
+    borderRadius: 27,
+    backgroundColor: '#E5F8EC',
     alignItems: 'center',
     justifyContent: 'center',
   },
-  headerIconButtonSecondary: {
-    width: 44,
-    height: 44,
-    borderRadius: 14,
-    backgroundColor: 'rgba(255,255,255,0.10)',
-    alignItems: 'center',
-    justifyContent: 'center',
+  titleBlock: {
+    flex: 1,
+    minWidth: 0,
   },
-  headerTitleWrap: { flex: 1, alignItems: 'center', marginHorizontal: 12 },
-  headerTitle: { fontSize: 28, fontWeight: '800', color: '#FFFFFF' },
-  headerMetaRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 10 },
-  statusBadge: {
+  title: {
+    color: '#07071A',
+    fontSize: 24,
+    lineHeight: 28,
+    fontWeight: '900',
+    letterSpacing: 0,
+  },
+  statusRow: {
+    marginTop: 4,
     flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(255,255,255,0.14)',
-    paddingHorizontal: 12,
-    paddingVertical: 7,
-    borderRadius: 999,
-  },
-  statusDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#FACC15', marginRight: 8 },
-  statusBadgeText: { color: '#FFFFFF', fontWeight: '700' },
-  timerBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(15,23,42,0.18)',
-    paddingHorizontal: 12,
-    paddingVertical: 7,
-    borderRadius: 999,
-  },
-  timerBadgeExpired: { backgroundColor: '#FEE2E2' },
-  timerBadgeText: { color: '#FFFFFF', fontWeight: '700', marginLeft: 6 },
-  timerBadgeTextExpired: { color: '#7F1D1D' },
-  heroSummary: {
-    marginTop: 18,
-    backgroundColor: 'rgba(255,255,255,0.10)',
-    borderRadius: 22,
-    padding: 16,
-    flexDirection: 'row',
-    alignItems: 'stretch',
-  },
-  summaryBlock: { flex: 1 },
-  summaryLabel: { color: 'rgba(255,255,255,0.66)', fontSize: 12, fontWeight: '600' },
-  summaryValue: { color: '#FFFFFF', fontSize: 18, fontWeight: '800', marginTop: 6 },
-  summarySubtext: { color: 'rgba(255,255,255,0.72)', marginTop: 4, lineHeight: 18 },
-  summaryDivider: { width: 1, backgroundColor: 'rgba(255,255,255,0.14)', marginHorizontal: 16 },
-
-  // Scroll content
-  content: { padding: 18, paddingBottom: 200, gap: 16 },
-
-  // Cards
-  locationCard: { backgroundColor: '#FFFFFF', borderRadius: 28, padding: 18 },
-  surfaceCard: { backgroundColor: '#FFFFFF', borderRadius: 28, padding: 18 },
-
-  // Section header
-  sectionHeader: { flexDirection: 'row', alignItems: 'center' },
-  sectionIconWrap: {
-    width: 44, height: 44, borderRadius: 14,
-    backgroundColor: '#E8F3EB', alignItems: 'center', justifyContent: 'center', marginRight: 12,
-  },
-  sectionIconWrapMuted: {
-    width: 44, height: 44, borderRadius: 14,
-    backgroundColor: '#EDF5EE', alignItems: 'center', justifyContent: 'center', marginRight: 12,
-  },
-  sectionCopy: { flex: 1 },
-  sectionTitle: { fontSize: 16, fontWeight: '800', color: '#0F172A' },
-  sectionSubtitle: { color: '#64748B', marginTop: 2, fontSize: 13 },
-
-  // Badges
-  priorityBadge: { backgroundColor: '#FFF1E7', borderRadius: 999, paddingHorizontal: 12, paddingVertical: 7 },
-  priorityBadgeText: { color: '#C2410C', fontWeight: '700' },
-  priorityBadgeSoft: { backgroundColor: '#FFF1E7', borderRadius: 999, paddingHorizontal: 10, paddingVertical: 6 },
-  priorityBadgeSoftText: { color: '#C2410C', fontWeight: '700', fontSize: 12 },
-
-  // Location / map
-  permissionCard: {
-    marginTop: 14, borderRadius: 16, borderWidth: 1, borderColor: '#FCD9B6',
-    backgroundColor: '#FFF7ED', padding: 14, flexDirection: 'row', alignItems: 'center', gap: 10,
-  },
-  permissionCopy: { flex: 1 },
-  permissionTitle: { color: '#9A3412', fontWeight: '800', fontSize: 13 },
-  permissionText: { color: '#7C2D12', marginTop: 3, fontSize: 12, lineHeight: 16 },
-  permissionButton: { borderRadius: 999, paddingHorizontal: 12, paddingVertical: 8, backgroundColor: '#F59E0B' },
-  permissionButtonText: { color: '#FFFFFF', fontWeight: '800', fontSize: 12 },
-  mapWrap: { marginTop: 14 },
-  mapMetaRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 12 },
-  mapMetaPill: {
-    flexDirection: 'row', alignItems: 'center',
-    backgroundColor: '#EDF5EE', borderRadius: 999, paddingHorizontal: 10, paddingVertical: 7, gap: 6,
-  },
-  markerDot: { width: 10, height: 10, borderRadius: 5 },
-  mapMetaText: { color: '#334155', fontWeight: '700', fontSize: 12 },
-  locatingRow: { marginTop: 12, flexDirection: 'row', alignItems: 'center', gap: 8 },
-  locatingText: { color: '#166534', fontWeight: '600' },
-
-  // Info card
-  infoCard: { borderRadius: 22, padding: 16, backgroundColor: '#EAF3EF', flexDirection: 'row', alignItems: 'flex-start', gap: 12 },
-  infoCopy: { flex: 1 },
-  infoTitle: { color: '#166534', fontWeight: '800' },
-  infoText: { color: '#475569', marginTop: 4, lineHeight: 20 },
-
-  // Customer
-  lockCircle: { width: 34, height: 34, borderRadius: 17, backgroundColor: '#F3F4F6', alignItems: 'center', justifyContent: 'center' },
-  customerCard: { marginTop: 16, borderRadius: 22, borderWidth: 1, borderColor: '#E6ECE8', padding: 16, backgroundColor: '#FBFCFB' },
-  customerTopRow: { flexDirection: 'row', alignItems: 'center' },
-  customerAvatar: { width: 52, height: 52, borderRadius: 26, backgroundColor: '#166534', alignItems: 'center', justifyContent: 'center' },
-  customerAvatarText: { color: '#FFFFFF', fontSize: 22, fontWeight: '800' },
-  customerMeta: { flex: 1, marginLeft: 12 },
-  customerName: { fontSize: 22, fontWeight: '800', color: '#0F172A' },
-  customerSubtext: { color: '#64748B', marginTop: 3 },
-  customerRating: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#FEF3C7', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 999 },
-  customerRatingText: { color: '#92400E', fontWeight: '800', marginLeft: 4 },
-  lockedPanel: { marginTop: 18, borderRadius: 18, borderWidth: 1, borderColor: '#E5E7EB', padding: 14, flexDirection: 'row', alignItems: 'center', backgroundColor: '#FFFFFF' },
-  lockedCopy: { flex: 1, marginLeft: 12 },
-  lockedTitle: { color: '#0F172A', fontSize: 18, fontWeight: '700' },
-  lockedText: { color: '#64748B', marginTop: 4, lineHeight: 18 },
-  customerMetaRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginTop: 16 },
-  customerMetaPill: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#F3F6F4', borderRadius: 999, paddingHorizontal: 12, paddingVertical: 8 },
-  customerMetaPillText: { color: '#475569', fontWeight: '700', marginLeft: 6 },
-
-  // Order summary
-  materialHero: { marginTop: 16, borderRadius: 22, borderWidth: 1, borderColor: '#E6ECE8', padding: 18, backgroundColor: '#FBFCFB' },
-  materialHeroTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  materialHeroTitle: { fontSize: 18, fontWeight: '800', color: '#0F172A', flex: 1, marginRight: 12 },
-  materialHeroSubtext: { color: '#64748B', marginTop: 10 },
-  summaryList: { marginTop: 16, gap: 14 },
-  summaryListRow: { flexDirection: 'row', alignItems: 'center' },
-  summaryListLabel: { flex: 1, color: '#64748B', marginLeft: 10, fontWeight: '600' },
-  summaryListValue: { color: '#0F172A', fontWeight: '800' },
-  cashBadge: { backgroundColor: '#E8F3EB', borderRadius: 999, paddingHorizontal: 12, paddingVertical: 6 },
-  cashBadgeText: { color: '#166534', fontWeight: '800' },
-  estimatePanel: { marginTop: 18, backgroundColor: '#166534', borderRadius: 20, padding: 18 },
-  estimateLabel: { color: '#D1FAE5', fontWeight: '700' },
-  estimateValue: { color: '#FFFFFF', fontSize: 30, fontWeight: '800', marginTop: 8 },
-
-  // ── Category cards ──────────────────────────────────────────────────────────
-  categoryScroll: { marginTop: 18 },
-  categoryScrollContent: { paddingHorizontal: 2, gap: 12, paddingBottom: 4 },
-  categoryCard: {
-    width: 96,
-    borderRadius: 20,
-    backgroundColor: '#F8FAFC',
-    borderWidth: 2,
-    borderColor: '#E2E8F0',
-    padding: 12,
     alignItems: 'center',
     gap: 8,
   },
-  categoryCardImage: {
-    width: 64,
+  statusDot: {
+    width: 13,
+    height: 13,
+    borderRadius: 7,
+    backgroundColor: '#20D42B',
+  },
+  statusText: {
+    color: '#052E1A',
+    fontSize: 17,
+    lineHeight: 21,
+    flexShrink: 1,
+  },
+  timerPill: {
+    minWidth: 122,
     height: 64,
-    borderRadius: 32,
-    resizeMode: 'cover',
-  },
-  categoryCardImagePlaceholder: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  categoryCardName: {
-    color: '#0F172A',
-    fontWeight: '800',
-    fontSize: 12,
-    textAlign: 'center',
-  },
-  categoryCountBadge: {
-    backgroundColor: '#E2E8F0',
-    borderRadius: 999,
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    minWidth: 24,
-    alignItems: 'center',
-  },
-  categoryCountText: {
-    color: '#64748B',
-    fontSize: 11,
-    fontWeight: '800',
-  },
-
-  // ── Product rows ────────────────────────────────────────────────────────────
-  productList: { marginTop: 16, borderTopWidth: 1, borderTopColor: '#F1F5F9' },
-  productRow: {
+    borderRadius: 34,
+    backgroundColor: '#DFF6E7',
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 14,
-    borderBottomWidth: 1,
-    borderBottomColor: '#F1F5F9',
+    justifyContent: 'center',
+    paddingHorizontal: 14,
+    gap: 10,
+  },
+  timerPillExpired: {
+    backgroundColor: '#FEE2E2',
+  },
+  timerValue: {
+    color: '#06351F',
+    fontSize: 24,
+    lineHeight: 27,
+    fontWeight: '900',
+  },
+  timerValueExpired: {
+    color: '#B91C1C',
+    fontSize: 17,
+  },
+  timerLabel: {
+    color: '#064226',
+    fontSize: 10,
+    fontWeight: '700',
+  },
+  requestCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 22,
+    padding: 18,
+    borderWidth: 1,
+    borderColor: '#E5EEE8',
+  },
+  customerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
     gap: 12,
   },
-  productImage: { width: 58, height: 58, borderRadius: 16, resizeMode: 'cover' },
-  productImagePlaceholder: {
-    width: 58,
-    height: 58,
-    borderRadius: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
+  avatarImage: {
+    width: 70,
+    height: 70,
+    borderRadius: 35,
+    backgroundColor: '#DFF6E7',
   },
-  productMeta: { flex: 1 },
-  productName: { color: '#0F172A', fontWeight: '800', fontSize: 15 },
-  productQty: { color: '#64748B', marginTop: 4, fontSize: 13 },
-  productRateWrap: { alignItems: 'flex-end' },
-  productRate: { color: '#14532D', fontWeight: '800', fontSize: 14 },
-  productRateUnit: { color: '#94A3B8', fontSize: 11, marginTop: 2 },
-  categoryTapHint: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
-    marginTop: 16,
-    paddingVertical: 12,
-  },
-  categoryTapHintText: { color: '#94A3B8', fontSize: 13, fontWeight: '600' },
-
-  // ── Bottom action sheet (redesigned) ────────────────────────────────────────
-  bottomSheet: {
-    position: 'absolute',
-    left: 14,
-    right: 14,
-    bottom: 14,
-    backgroundColor: '#FFFFFF',
-    borderRadius: 28,
-    padding: 18,
-    paddingTop: 16,
+  avatarPlaceholder: {
+    width: 70,
+    height: 70,
+    borderRadius: 35,
+    backgroundColor: '#DFF6E7',
     borderWidth: 1,
-    borderColor: '#E5ECE7',
-    shadowColor: '#0F172A',
-    shadowOpacity: 0.1,
-    shadowRadius: 18,
-    shadowOffset: { width: 0, height: 8 },
-    elevation: 10,
-    gap: 14,
-  },
-  bottomSheetTopRow: {
-    flexDirection: 'row',
+    borderColor: '#BDEFD0',
     alignItems: 'center',
-    justifyContent: 'space-between',
+    justifyContent: 'center',
   },
-  bottomSheetTitleWrap: { flex: 1, marginRight: 12 },
-  bottomSheetTitle: { fontSize: 17, fontWeight: '800', color: '#0F172A' },
-  bottomSheetSubtext: { color: '#64748B', marginTop: 3, fontSize: 13 },
-
-  // Small decline pill
-  declinePill: {
+  avatarLetter: {
+    color: '#067A3D',
+    fontSize: 30,
+    lineHeight: 34,
+    fontWeight: '900',
+  },
+  customerCopy: {
+    flex: 1,
+    minWidth: 0,
+  },
+  customerName: {
+    color: '#07071A',
+    fontSize: 24,
+    lineHeight: 29,
+    fontWeight: '900',
+  },
+  ratingRow: {
+    marginTop: 6,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 5,
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 999,
-    borderWidth: 1.5,
-    borderColor: '#FECACA',
-    backgroundColor: '#FFF5F5',
   },
-  declinePillDisabled: { borderColor: '#E2E8F0', backgroundColor: '#F8FAFC' },
-  declinePillText: { color: '#EF4444', fontWeight: '700', fontSize: 13 },
-  declinePillTextDisabled: { color: '#CBD5E1' },
-
-  // Decline modal
-  modalBackdrop: { flex: 1, backgroundColor: 'rgba(15,23,42,0.45)', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 24 },
-  modalCard: { backgroundColor: '#FFFFFF', borderRadius: 24, padding: 22, width: '100%' },
-  modalTitle: { fontSize: 20, fontWeight: '800', color: '#0F172A' },
-  modalText: { color: '#64748B', marginTop: 8, lineHeight: 20 },
-  modalActions: { flexDirection: 'row', gap: 12, marginTop: 20 },
-  modalSecondaryButton: { flex: 1, height: 48, borderRadius: 14, borderWidth: 1, borderColor: '#D7E1DA', alignItems: 'center', justifyContent: 'center' },
-  modalSecondaryText: { color: '#0F172A', fontWeight: '700' },
-  modalPrimaryButton: { flex: 1, height: 48, borderRadius: 14, backgroundColor: '#B91C1C', alignItems: 'center', justifyContent: 'center' },
-  modalPrimaryText: { color: '#FFFFFF', fontWeight: '800' },
-
-  // Expired overlay
-  expiredOverlay: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(148,163,184,0.28)', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 24 },
-  expiredOverlayCard: { backgroundColor: 'rgba(255,255,255,0.95)', borderRadius: 24, paddingHorizontal: 24, paddingVertical: 20, alignItems: 'center' },
-  expiredOverlayTitle: { fontSize: 22, fontWeight: '800', color: '#334155' },
-  expiredOverlayText: { color: '#64748B', marginTop: 8, textAlign: 'center' },
-
-  // Expired feedback sheet
+  ratingText: {
+    color: '#07071A',
+    fontSize: 17,
+    fontWeight: '900',
+  },
+  reviewText: {
+    color: '#475569',
+    fontSize: 14,
+    flexShrink: 1,
+  },
+  contactButton: {
+    width: 46,
+    height: 46,
+    borderRadius: 23,
+    backgroundColor: '#E8F7EE',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  addressBlock: {
+    marginTop: 26,
+    borderRadius: 20,
+    backgroundColor: '#FBFEFC',
+    borderWidth: 1,
+    borderColor: '#E3F0E8',
+    padding: 15,
+  },
+  addressTopRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  addressMarkerOuter: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: '#0D6B3A',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  addressMarkerInner: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#FFFFFF',
+  },
+  addressCopy: {
+    flex: 1,
+    minWidth: 0,
+    paddingRight: 10,
+  },
+  addressLabel: {
+    color: '#067A3D',
+    fontSize: 20,
+    lineHeight: 24,
+    fontWeight: '900',
+  },
+  addressText: {
+    marginTop: 12,
+    color: '#334155',
+    fontSize: 18,
+    lineHeight: 26,
+  },
+  mapsButton: {
+    height: 50,
+    borderRadius: 25,
+    borderWidth: 1.4,
+    borderColor: '#079348',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 18,
+    marginTop: 14,
+    alignSelf: 'flex-start',
+    gap: 8,
+  },
+  mapsButtonText: {
+    color: '#067A3D',
+    fontSize: 16,
+    fontWeight: '900',
+  },
+  divider: {
+    height: 1,
+    backgroundColor: '#E5E7EB',
+    marginVertical: 16,
+  },
+  metricsGrid: {
+    gap: 10,
+  },
+  metricPair: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  metricTile: {
+    flex: 1,
+    minHeight: 120,
+    borderRadius: 18,
+    backgroundColor: '#F8FCFA',
+    borderWidth: 1,
+    borderColor: '#E2EEE7',
+    padding: 13,
+  },
+  metricTileWide: {
+    minHeight: 124,
+  },
+  metricIcon: {
+    width: 46,
+    height: 46,
+    borderRadius: 23,
+    backgroundColor: '#E5F8EC',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 8,
+  },
+  metricLabel: {
+    color: '#64748B',
+    fontSize: 13,
+    fontWeight: '800',
+  },
+  metricValue: {
+    marginTop: 6,
+    color: '#07071A',
+    fontSize: 22,
+    lineHeight: 27,
+    fontWeight: '900',
+  },
+  metricDetail: {
+    marginTop: 3,
+    color: '#64748B',
+    fontSize: 13,
+    lineHeight: 16,
+  },
+  mapCard: {
+    height: 270,
+    borderRadius: 22,
+    backgroundColor: '#E7EFEA',
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: '#E0ECE5',
+  },
+  mapFallback: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+  },
+  mapFallbackText: {
+    color: '#475569',
+    fontWeight: '800',
+  },
+  vendorMapLabel: {
+    position: 'absolute',
+    left: 24,
+    top: 62,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+  },
+  customerMapLabel: {
+    position: 'absolute',
+    right: 14,
+    bottom: 78,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+  },
+  mapLabelText: {
+    color: '#0F172A',
+    fontSize: 12,
+    fontWeight: '900',
+  },
+  routeDistanceBadge: {
+    position: 'absolute',
+    alignSelf: 'center',
+    bottom: 16,
+    backgroundColor: '#078842',
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+  },
+  routeDistanceText: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: '900',
+  },
+  locationPrompt: {
+    position: 'absolute',
+    left: 12,
+    bottom: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    borderRadius: 999,
+    backgroundColor: '#FFF7ED',
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+  },
+  locationPromptText: {
+    color: '#B45309',
+    fontWeight: '900',
+    fontSize: 12,
+  },
+  materialsCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 24,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: '#E5EEE8',
+  },
+  noteCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 24,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: '#E5EEE8',
+  },
+  panelHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  panelIcon: {
+    width: 50,
+    height: 50,
+    borderRadius: 15,
+    backgroundColor: '#E5F8EC',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  panelCopy: {
+    flex: 1,
+    minWidth: 0,
+  },
+  panelTitle: {
+    color: '#07071A',
+    fontSize: 22,
+    lineHeight: 27,
+    fontWeight: '900',
+  },
+  panelSubtitle: {
+    marginTop: 4,
+    color: '#64748B',
+    fontSize: 14,
+    lineHeight: 19,
+  },
+  materialSummaryGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+    marginTop: 16,
+  },
+  materialSummaryTile: {
+    flexGrow: 1,
+    flexBasis: '30%',
+    minHeight: 76,
+    borderRadius: 17,
+    backgroundColor: '#F2FAF5',
+    borderWidth: 1,
+    borderColor: '#DCEEE4',
+    padding: 11,
+    justifyContent: 'center',
+  },
+  materialSummaryLabel: {
+    color: '#64748B',
+    fontSize: 11,
+    fontWeight: '900',
+    textTransform: 'uppercase',
+  },
+  materialSummaryValue: {
+    marginTop: 5,
+    color: '#06351F',
+    fontSize: 17,
+    lineHeight: 22,
+    fontWeight: '900',
+  },
+  materialList: {
+    marginTop: 14,
+    gap: 10,
+  },
+  materialRow: {
+    minHeight: 88,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    backgroundColor: '#FFFFFF',
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    gap: 12,
+  },
+  materialImage: {
+    width: 64,
+    height: 64,
+    borderRadius: 15,
+    resizeMode: 'cover',
+  },
+  materialImageFallback: {
+    width: 64,
+    height: 64,
+    borderRadius: 15,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  materialCopy: {
+    flex: 1,
+    minWidth: 0,
+  },
+  materialName: {
+    color: '#07071A',
+    fontSize: 17,
+    lineHeight: 21,
+    fontWeight: '900',
+  },
+  materialQty: {
+    marginTop: 4,
+    color: '#475569',
+    fontSize: 14,
+    lineHeight: 18,
+  },
+  noteBody: {
+    marginTop: 18,
+    minHeight: 118,
+    borderRadius: 18,
+    backgroundColor: '#EAF8F0',
+    padding: 16,
+    justifyContent: 'flex-start',
+  },
+  quoteMark: {
+    color: '#079348',
+    fontSize: 34,
+    lineHeight: 32,
+    fontWeight: '900',
+  },
+  noteText: {
+    color: '#1E293B',
+    fontSize: 17,
+    lineHeight: 25,
+  },
+  actionDock: {
+    marginTop: 2,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 26,
+    borderWidth: 1,
+    borderColor: '#E5EEE8',
+    padding: 16,
+    paddingBottom: 20,
+    gap: 14,
+    alignItems: 'stretch',
+  },
+  slideWrap: {
+    width: '100%',
+  },
+  declineButton: {
+    width: '100%',
+    height: 64,
+    borderRadius: 33,
+    borderWidth: 2,
+    borderColor: '#FCA5A5',
+    backgroundColor: '#FFF7F7',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+  },
+  declineButtonDisabled: {
+    borderColor: '#E2E8F0',
+    backgroundColor: '#F8FAFC',
+  },
+  declineText: {
+    color: '#DC2626',
+    fontSize: 18,
+    fontWeight: '900',
+  },
+  declineTextDisabled: {
+    color: '#CBD5E1',
+  },
+  actionHint: {
+    color: '#64748B',
+    textAlign: 'center',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(15,23,42,0.45)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 24,
+  },
+  modalCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 24,
+    padding: 22,
+    width: '100%',
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: '900',
+    color: '#0F172A',
+  },
+  modalText: {
+    color: '#64748B',
+    marginTop: 8,
+    lineHeight: 20,
+  },
+  modalActions: {
+    flexDirection: 'row',
+    gap: 12,
+    marginTop: 20,
+  },
+  modalSecondaryButton: {
+    flex: 1,
+    height: 48,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#D7E1DA',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  modalSecondaryText: {
+    color: '#0F172A',
+    fontWeight: '800',
+  },
+  modalPrimaryButton: {
+    flex: 1,
+    height: 48,
+    borderRadius: 14,
+    backgroundColor: '#B91C1C',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  modalPrimaryText: {
+    color: '#FFFFFF',
+    fontWeight: '900',
+  },
+  expiredOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(148,163,184,0.26)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 24,
+  },
+  expiredOverlayCard: {
+    backgroundColor: 'rgba(255,255,255,0.96)',
+    borderRadius: 24,
+    paddingHorizontal: 24,
+    paddingVertical: 20,
+    alignItems: 'center',
+  },
+  expiredOverlayTitle: {
+    fontSize: 22,
+    fontWeight: '900',
+    color: '#334155',
+  },
+  expiredOverlayText: {
+    color: '#64748B',
+    marginTop: 8,
+    textAlign: 'center',
+  },
   feedbackBackdrop: {
     flex: 1,
     justifyContent: 'flex-end',
-    backgroundColor: 'rgba(15, 23, 42, 0.42)',
+    backgroundColor: 'rgba(15,23,42,0.42)',
   },
   feedbackSheet: {
     backgroundColor: '#FFFFFF',
@@ -1209,13 +1410,25 @@ const styles = StyleSheet.create({
     alignSelf: 'center',
     marginBottom: 14,
   },
-  feedbackTitle: { color: '#0F172A', fontSize: 22, fontWeight: '800' },
-  feedbackSubtitle: { color: '#475569', marginTop: 6, fontSize: 13, lineHeight: 19 },
-  feedbackOptions: { marginTop: 18, gap: 10 },
+  feedbackTitle: {
+    color: '#0F172A',
+    fontSize: 22,
+    fontWeight: '900',
+  },
+  feedbackSubtitle: {
+    color: '#475569',
+    marginTop: 6,
+    fontSize: 13,
+    lineHeight: 19,
+  },
+  feedbackOptions: {
+    marginTop: 18,
+    gap: 10,
+  },
   feedbackOption: {
     flexDirection: 'row',
     gap: 12,
-    alignItems: 'flex-start',
+    alignItems: 'center',
     padding: 14,
     borderRadius: 18,
     borderWidth: 1,
@@ -1226,7 +1439,6 @@ const styles = StyleSheet.create({
     borderColor: '#166534',
     backgroundColor: '#ECFDF3',
   },
-  feedbackOptionDotWrap: { paddingTop: 3 },
   feedbackOptionDot: {
     width: 14,
     height: 14,
@@ -1234,8 +1446,17 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderColor: '#94A3B8',
   },
-  feedbackOptionDotSelected: { borderColor: '#166534', backgroundColor: '#166534' },
-  feedbackOptionText: { flex: 1, color: '#0F172A', fontSize: 14, fontWeight: '600', lineHeight: 20 },
+  feedbackOptionDotSelected: {
+    borderColor: '#166534',
+    backgroundColor: '#166534',
+  },
+  feedbackOptionText: {
+    flex: 1,
+    color: '#0F172A',
+    fontSize: 14,
+    fontWeight: '700',
+    lineHeight: 20,
+  },
   feedbackInput: {
     marginTop: 14,
     minHeight: 92,
@@ -1255,10 +1476,22 @@ const styles = StyleSheet.create({
     paddingVertical: 15,
     alignItems: 'center',
   },
-  feedbackSubmitButtonDisabled: { opacity: 0.65 },
-  feedbackSubmitButtonText: { color: '#FFFFFF', fontSize: 15, fontWeight: '800' },
-  feedbackCancelButton: { alignItems: 'center', paddingVertical: 14 },
-  feedbackCancelText: { color: '#475569', fontWeight: '700' },
+  feedbackSubmitButtonDisabled: {
+    opacity: 0.65,
+  },
+  feedbackSubmitButtonText: {
+    color: '#FFFFFF',
+    fontSize: 15,
+    fontWeight: '900',
+  },
+  feedbackCancelButton: {
+    alignItems: 'center',
+    paddingVertical: 14,
+  },
+  feedbackCancelText: {
+    color: '#475569',
+    fontWeight: '800',
+  },
 });
 
 export default BookingRequestScreen;

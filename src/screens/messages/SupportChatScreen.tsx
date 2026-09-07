@@ -1,11 +1,13 @@
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   Animated,
   Image,
+  Keyboard,
   KeyboardAvoidingView,
   Modal,
   Platform,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -15,7 +17,7 @@ import {
 import { Ionicons, MaterialCommunityIcons, MaterialIcons } from '@expo/vector-icons';
 import * as DocumentPicker from 'expo-document-picker';
 import * as ImagePicker from 'expo-image-picker';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 interface SupportChatScreenProps {
   onBack: () => void;
@@ -26,9 +28,26 @@ const chatImage = require('../../../assets/images/avatars/chat_image.png');
 const TOPICS = ['Update my plan', 'Buy a new plan', 'Booking problem'];
 
 const SupportChatScreen = ({ onBack, onShowToast }: SupportChatScreenProps) => {
+  const insets = useSafeAreaInsets();
   const [message, setMessage] = useState('');
   const [isAttachmentSheetVisible, setIsAttachmentSheetVisible] = useState(false);
+  const [isReportMenuVisible, setIsReportMenuVisible] = useState(false);
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
   const sheetTranslateY = useRef(new Animated.Value(280)).current;
+
+  useEffect(() => {
+    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+    const showSub = Keyboard.addListener(showEvent, (event) => {
+      setKeyboardHeight(Math.max(event.endCoordinates.height - insets.bottom, 0));
+    });
+    const hideSub = Keyboard.addListener(hideEvent, () => setKeyboardHeight(0));
+
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
+  }, [insets.bottom]);
 
   const openAttachmentSheet = () => {
     setIsAttachmentSheetVisible(true);
@@ -86,10 +105,10 @@ const SupportChatScreen = ({ onBack, onShowToast }: SupportChatScreenProps) => {
   };
 
   return (
-    <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
+    <SafeAreaView style={styles.container} edges={['top']}>
       <KeyboardAvoidingView
-        style={styles.keyboardView}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        style={[styles.keyboardView, { paddingBottom: keyboardHeight }]}
+        behavior={undefined}
       >
         <View style={styles.backgroundLayer}>
           <View style={styles.glowTopLeft} />
@@ -106,9 +125,13 @@ const SupportChatScreen = ({ onBack, onShowToast }: SupportChatScreenProps) => {
             <Ionicons name="arrow-back" size={28} color="#0B6F32" />
           </TouchableOpacity>
           <Text style={styles.headerTitle}>Support</Text>
-          <View style={styles.headerCircle}>
+          <TouchableOpacity
+            style={styles.headerCircle}
+            activeOpacity={0.8}
+            onPress={() => setIsReportMenuVisible(true)}
+          >
             <Ionicons name="ellipsis-horizontal" size={28} color="#0B6F32" />
-          </View>
+          </TouchableOpacity>
         </View>
 
         <View style={styles.hero}>
@@ -121,25 +144,31 @@ const SupportChatScreen = ({ onBack, onShowToast }: SupportChatScreenProps) => {
         </Text>
         <Text style={styles.subtitle}>Send your request. Our assistant will help.</Text>
 
-        <View style={styles.topicWrap}>
-          {TOPICS.map((topic, index) => (
-            <TouchableOpacity
-              key={topic}
-              style={[styles.topicChip, index === 2 && styles.topicChipWide]}
-              activeOpacity={0.86}
-              onPress={() => setMessage(topic)}
-            >
-              <MaterialIcons
-                name={index === 0 ? 'sync' : index === 1 ? 'workspace-premium' : 'event-busy'}
-                size={20}
-                color="#087333"
-              />
-              <Text style={styles.topicText}>{topic}</Text>
-            </TouchableOpacity>
-          ))}
+        <View style={styles.topicFloat}>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.topicRow}
+          >
+            {TOPICS.map((topic, index) => (
+              <TouchableOpacity
+                key={topic}
+                style={styles.topicChip}
+                activeOpacity={0.86}
+                onPress={() => setMessage(topic)}
+              >
+                <MaterialIcons
+                  name={index === 0 ? 'sync' : index === 1 ? 'workspace-premium' : 'event-busy'}
+                  size={20}
+                  color="#087333"
+                />
+                <Text style={styles.topicText}>{topic}</Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
         </View>
 
-        <View style={styles.inputDock}>
+        <View style={[styles.inputDock, { marginBottom: keyboardHeight > 0 ? 12 : Math.max(insets.bottom, 18) }]}>
           <TouchableOpacity style={styles.attachButton} onPress={openAttachmentSheet} activeOpacity={0.84}>
             <MaterialCommunityIcons name="paperclip" size={30} color="#0B6F32" />
           </TouchableOpacity>
@@ -149,6 +178,8 @@ const SupportChatScreen = ({ onBack, onShowToast }: SupportChatScreenProps) => {
             placeholder="Ask your question..."
             placeholderTextColor="#8B9E95"
             style={styles.input}
+            multiline
+            textAlignVertical="center"
           />
           <TouchableOpacity
             style={styles.sendButton}
@@ -164,6 +195,24 @@ const SupportChatScreen = ({ onBack, onShowToast }: SupportChatScreenProps) => {
           </TouchableOpacity>
         </View>
       </KeyboardAvoidingView>
+
+      <Modal visible={isReportMenuVisible} transparent animationType="fade" onRequestClose={() => setIsReportMenuVisible(false)}>
+        <Pressable style={styles.menuOverlay} onPress={() => setIsReportMenuVisible(false)}>
+          <View style={[styles.reportMenu, { top: Math.max(insets.top + 74, 86) }]}>
+            <TouchableOpacity
+              style={styles.reportOption}
+              activeOpacity={0.86}
+              onPress={() => {
+                setIsReportMenuVisible(false);
+                onShowToast?.('Issue report started.', 'info');
+              }}
+            >
+              <MaterialIcons name="report-problem" size={20} color="#087333" />
+              <Text style={styles.reportOptionText}>Report issue</Text>
+            </TouchableOpacity>
+          </View>
+        </Pressable>
+      </Modal>
 
       <Modal visible={isAttachmentSheetVisible} transparent animationType="none" onRequestClose={closeAttachmentSheet}>
         <Pressable style={styles.sheetOverlay} onPress={closeAttachmentSheet}>
@@ -208,6 +257,7 @@ const styles = StyleSheet.create({
   },
   backgroundLayer: {
     ...StyleSheet.absoluteFillObject,
+    bottom: -96,
     overflow: 'hidden',
   },
   glowTopLeft: {
@@ -336,18 +386,18 @@ const styles = StyleSheet.create({
     maxWidth: 318,
     textAlign: 'center',
   },
-  topicWrap: {
-    alignContent: 'center',
-    alignItems: 'center',
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 12,
-    justifyContent: 'center',
+  topicFloat: {
     marginTop: 'auto',
-    marginBottom: 26,
+    marginHorizontal: -24,
+    marginBottom: 18,
+  },
+  topicRow: {
+    paddingHorizontal: 24,
+    paddingVertical: 4,
+    gap: 12,
   },
   topicChip: {
-    minHeight: 54,
+    height: 56,
     borderRadius: 24,
     paddingHorizontal: 18,
     flexDirection: 'row',
@@ -356,9 +406,6 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'rgba(180, 238, 198, 0.82)',
   },
-  topicChipWide: {
-    paddingHorizontal: 22,
-  },
   topicText: {
     color: '#0B2D1C',
     fontSize: 15,
@@ -366,23 +413,53 @@ const styles = StyleSheet.create({
     marginLeft: 9,
   },
   inputDock: {
-    minHeight: 72,
-    borderRadius: 34,
+    minHeight: 86,
+    borderRadius: 38,
     backgroundColor: '#FFFFFF',
     flexDirection: 'row',
     alignItems: 'center',
-    paddingLeft: 14,
-    paddingRight: 8,
-    marginBottom: Platform.OS === 'ios' ? 16 : 10,
+    paddingLeft: 16,
+    paddingRight: 10,
     shadowColor: '#10733A',
     shadowOpacity: 0.13,
     shadowRadius: 20,
     shadowOffset: { width: 0, height: 10 },
     elevation: 8,
   },
+  menuOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(8, 43, 25, 0.08)',
+  },
+  reportMenu: {
+    position: 'absolute',
+    right: 24,
+    width: 184,
+    borderRadius: 18,
+    backgroundColor: '#FFFFFF',
+    padding: 8,
+    shadowColor: '#0B2D1C',
+    shadowOpacity: 0.14,
+    shadowRadius: 18,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 8,
+  },
+  reportOption: {
+    height: 50,
+    borderRadius: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    backgroundColor: '#F4FCF6',
+  },
+  reportOptionText: {
+    color: '#102B1D',
+    fontSize: 15,
+    fontWeight: '800',
+    marginLeft: 10,
+  },
   attachButton: {
-    width: 42,
-    height: 54,
+    width: 46,
+    height: 66,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -391,12 +468,14 @@ const styles = StyleSheet.create({
     color: '#0B2D1C',
     fontSize: 17,
     paddingHorizontal: 12,
-    paddingVertical: 12,
+    paddingVertical: 14,
+    maxHeight: 92,
+    minHeight: 58,
   },
   sendButton: {
-    width: 58,
-    height: 58,
-    borderRadius: 29,
+    width: 62,
+    height: 62,
+    borderRadius: 31,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: '#098C35',

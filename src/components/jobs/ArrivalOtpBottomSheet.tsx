@@ -3,9 +3,11 @@ import React, { useEffect, useMemo, useRef } from 'react';
 import {
   ActivityIndicator,
   Animated,
+  Image,
   Modal,
   PanResponder,
   Platform,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -13,16 +15,19 @@ import {
   View,
   useWindowDimensions,
 } from 'react-native';
+import LiveSessionMap from './LiveSessionMap';
+import { BookingActiveResponse, SelectedPickupItem, VendorCoordinates } from '../../types';
 
 interface ArrivalOtpBottomSheetProps {
   visible: boolean;
-  selfieUploading: boolean;
-  selfieRemoteUrl: string;
+  booking: BookingActiveResponse;
+  selectedItems: SelectedPickupItem[];
+  vendorCoordinates?: VendorCoordinates | null;
+  pickupCoordinates: { latitude: number; longitude: number };
   otpSent: boolean;
   otpCode: string;
   isActionLoading: boolean;
   onClose: () => void;
-  onCaptureSelfie: () => void;
   onSendOtp: () => void;
   onVerifyOtp: () => void;
   onChangeOtp: (value: string) => void;
@@ -30,13 +35,14 @@ interface ArrivalOtpBottomSheetProps {
 
 const ArrivalOtpBottomSheet = ({
   visible,
-  selfieUploading,
-  selfieRemoteUrl,
+  booking,
+  selectedItems,
+  vendorCoordinates,
+  pickupCoordinates,
   otpSent,
   otpCode,
   isActionLoading,
   onClose,
-  onCaptureSelfie,
   onSendOtp,
   onVerifyOtp,
   onChangeOtp,
@@ -136,51 +142,75 @@ const ArrivalOtpBottomSheet = ({
             <View style={styles.dragHandle} />
           </View>
 
+          <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.sheetScrollContent}>
           <View style={styles.sheetHeader}>
             <View style={styles.headerBadge}>
-              <MaterialIcons name="lock-open" size={16} color="#DCFCE7" />
-              <Text style={styles.headerBadgeText}>Arrival OTP</Text>
+              <MaterialIcons name="verified-user" size={16} color="#DCFCE7" />
+              <Text style={styles.headerBadgeText}>Face verified</Text>
             </View>
-            <Text style={styles.sheetTitle}>Verify customer arrival</Text>
+            <Text style={styles.sheetTitle}>Confirm customer arrival</Text>
             <Text style={styles.sheetSubtitle}>
-              Capture the selfie, send the OTP, then let the customer confirm from the same order view.
+              Review the pickup details, send the one-time password, and enter the customer&apos;s code to unlock arrival.
             </Text>
+          </View>
+
+          <View style={styles.bentoGrid}>
+            <View style={[styles.bentoCard, styles.bentoWide]}>
+              <Text style={styles.bentoLabel}>CUSTOMER</Text>
+              <Text style={styles.bentoValue}>{booking.customer?.name || 'Customer'}</Text>
+              <Text style={styles.bentoMeta}>★ {Number(booking.customer?.rating || 0).toFixed(1)} rating</Text>
+            </View>
+            <View style={styles.bentoCard}>
+              <Text style={styles.bentoLabel}>ORDER</Text>
+              <Text style={styles.bentoValueSmall}>#{booking.order_number || booking.booking_id}</Text>
+            </View>
+            <View style={styles.bentoCard}>
+              <Text style={styles.bentoLabel}>ESTIMATED</Text>
+              <Text style={styles.bentoValueSmall}>₹{Number(booking.estimated_order_value || 0).toLocaleString('en-IN')}</Text>
+            </View>
+            <View style={[styles.bentoCard, styles.bentoWide]}>
+              <Text style={styles.bentoLabel}>PICKUP ADDRESS</Text>
+              <Text style={styles.bentoValueSmall}>{booking.pickup_address || 'Address unavailable'}</Text>
+            </View>
+          </View>
+
+          <View style={styles.actionCard}>
+            <View style={styles.sectionHeader}>
+              <Text style={styles.sectionTitle}>Materials in this pickup</Text>
+              <Text style={styles.sectionMeta}>{selectedItems.length} item{selectedItems.length === 1 ? '' : 's'}</Text>
+            </View>
+            <View style={styles.tableHeader}>
+              <Text style={[styles.tableHeaderText, styles.materialColumn]}>MATERIAL</Text>
+              <Text style={styles.tableHeaderText}>QTY</Text>
+              <Text style={styles.tableHeaderText}>RATE</Text>
+            </View>
+            {selectedItems.map((item) => (
+              <View key={String(item.product_id)} style={styles.tableRow}>
+                {item.image_url ? (
+                  <Image source={{ uri: item.image_url }} style={styles.materialImage} />
+                ) : (
+                  <View style={[styles.materialImage, styles.materialImageFallback]}>
+                    <MaterialIcons name="recycling" size={18} color="#15803D" />
+                  </View>
+                )}
+                <View style={styles.materialColumn}>
+                  <Text style={styles.materialName}>{item.product_name}</Text>
+                  <Text style={styles.materialUnit}>{item.unit || 'kg'}</Text>
+                </View>
+                <Text style={styles.tableCell}>{Number(item.quantity || 0).toFixed(2)}</Text>
+                <Text style={styles.tableCell}>₹{Number(item.rate_per_unit || item.max_rate || item.min_rate || 0).toFixed(0)}</Text>
+              </View>
+            ))}
           </View>
 
           <View style={styles.actionCard}>
             <TouchableOpacity
-              style={[styles.primaryButton, selfieUploading && styles.buttonDisabled]}
-              onPress={onCaptureSelfie}
-              disabled={selfieUploading}
-            >
-              {selfieUploading ? (
-                <ActivityIndicator color="#fff" />
-              ) : (
-                <>
-                  <MaterialIcons name="photo-camera" size={18} color="#fff" />
-                  <Text style={styles.primaryButtonText}>Capture & upload selfie</Text>
-                </>
-              )}
-            </TouchableOpacity>
-
-            <View style={styles.statusRow}>
-              <MaterialIcons
-                name={selfieRemoteUrl ? 'check-circle' : 'radio-button-unchecked'}
-                size={18}
-                color={selfieRemoteUrl ? '#22C55E' : '#94A3B8'}
-              />
-              <Text style={[styles.statusText, selfieRemoteUrl ? styles.statusTextActive : null]}>
-                {selfieRemoteUrl ? 'Selfie uploaded and ready for OTP.' : 'Selfie upload required before OTP.'}
-              </Text>
-            </View>
-
-            <TouchableOpacity
-              style={[styles.secondaryButton, (!selfieRemoteUrl || isActionLoading) && styles.buttonDisabled]}
+              style={[styles.primaryButton, (isActionLoading || otpSent) && styles.buttonDisabled]}
               onPress={onSendOtp}
-              disabled={!selfieRemoteUrl || isActionLoading}
+              disabled={isActionLoading || otpSent}
             >
-              <MaterialIcons name="send" size={18} color="#DCFCE7" />
-              <Text style={styles.secondaryButtonText}>Send arrival OTP</Text>
+              {isActionLoading ? <ActivityIndicator color="#fff" /> : <MaterialIcons name="send" size={19} color="#fff" />}
+              <Text style={styles.primaryButtonText}>{otpSent ? 'OTP sent to customer' : 'Send Arrival OTP'}</Text>
             </TouchableOpacity>
           </View>
 
@@ -214,9 +244,23 @@ const ArrivalOtpBottomSheet = ({
             </View>
           ) : null}
 
+          <View style={styles.actionCard}>
+            <View style={styles.sectionHeader}>
+              <Text style={styles.sectionTitle}>Pickup location</Text>
+              <Text style={styles.sectionMeta}>{Number(booking.distance_km || 0).toFixed(1)} km</Text>
+            </View>
+            <LiveSessionMap
+              customerLocation={pickupCoordinates}
+              vendorLocation={vendorCoordinates}
+              height={380}
+              showOverlay={false}
+            />
+          </View>
+
           <TouchableOpacity style={styles.closeButton} onPress={closeSheet}>
             <Text style={styles.closeButtonText}>Close</Text>
           </TouchableOpacity>
+          </ScrollView>
         </Animated.View>
       </Animated.View>
     </Modal>
@@ -230,15 +274,15 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0, 0, 0, 0.62)',
   },
   sheet: {
-    backgroundColor: '#050505',
+    backgroundColor: '#F4F7F5',
     borderTopLeftRadius: 30,
     borderTopRightRadius: 30,
     borderTopWidth: 1,
-    borderTopColor: '#1F2937',
+    borderTopColor: '#DDE8DF',
     paddingHorizontal: 18,
     paddingTop: 10,
     paddingBottom: 18,
-    minHeight: '72%',
+    maxHeight: '96%',
     ...Platform.select({
       ios: {
         shadowColor: '#000',
@@ -272,9 +316,7 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     paddingHorizontal: 12,
     paddingVertical: 7,
-    backgroundColor: 'rgba(34, 197, 94, 0.14)',
-    borderWidth: 1,
-    borderColor: 'rgba(34, 197, 94, 0.26)',
+    backgroundColor: '#14532D',
     marginBottom: 12,
   },
   headerBadgeText: {
@@ -284,14 +326,14 @@ const styles = StyleSheet.create({
     letterSpacing: 0.4,
   },
   sheetTitle: {
-    color: '#fff',
+    color: '#0F172A',
     fontSize: 26,
     lineHeight: 32,
     fontWeight: '900',
     letterSpacing: -0.3,
   },
   sheetSubtitle: {
-    color: '#94A3B8',
+    color: '#64748B',
     marginTop: 10,
     fontSize: 14,
     lineHeight: 20,
@@ -299,8 +341,8 @@ const styles = StyleSheet.create({
   actionCard: {
     borderRadius: 24,
     borderWidth: 1,
-    borderColor: '#1F2937',
-    backgroundColor: '#0F172A',
+    borderColor: '#E1EAE3',
+    backgroundColor: '#fff',
     padding: 14,
     gap: 12,
   },
@@ -319,6 +361,26 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     fontSize: 15,
   },
+  sheetScrollContent: { paddingBottom: 24, gap: 12 },
+  bentoGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
+  bentoCard: { width: '48.2%', minHeight: 78, borderRadius: 18, backgroundColor: '#fff', padding: 13, borderWidth: 1, borderColor: '#E1EAE3' },
+  bentoWide: { width: '100%' },
+  bentoLabel: { color: '#73907D', fontSize: 10, fontWeight: '900', letterSpacing: 0.8 },
+  bentoValue: { color: '#0F172A', fontSize: 18, fontWeight: '900', marginTop: 6 },
+  bentoValueSmall: { color: '#0F172A', fontSize: 14, fontWeight: '800', marginTop: 6, lineHeight: 19 },
+  bentoMeta: { color: '#64748B', fontSize: 12, marginTop: 3 },
+  sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
+  sectionTitle: { color: '#0F172A', fontSize: 16, fontWeight: '900' },
+  sectionMeta: { color: '#64748B', fontSize: 12, fontWeight: '700' },
+  tableHeader: { flexDirection: 'row', alignItems: 'center', paddingBottom: 8, borderBottomWidth: 1, borderBottomColor: '#E2E8F0', gap: 10 },
+  tableHeaderText: { width: 48, color: '#94A3B8', fontSize: 10, fontWeight: '900' },
+  tableRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: '#F1F5F9', gap: 10 },
+  materialImage: { width: 42, height: 42, borderRadius: 12, backgroundColor: '#E8F5E8' },
+  materialImageFallback: { alignItems: 'center', justifyContent: 'center' },
+  materialColumn: { flex: 1 },
+  materialName: { color: '#1E293B', fontSize: 13, fontWeight: '800' },
+  materialUnit: { color: '#94A3B8', fontSize: 11, marginTop: 2 },
+  tableCell: { width: 48, color: '#334155', fontSize: 12, fontWeight: '800' },
   statusRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -355,13 +417,13 @@ const styles = StyleSheet.create({
     marginTop: 14,
     borderRadius: 24,
     borderWidth: 1,
-    borderColor: '#1F2937',
-    backgroundColor: 'rgba(255,255,255,0.03)',
+    borderColor: '#E2E8F0',
+    backgroundColor: '#F8FAFC',
     padding: 14,
     gap: 12,
   },
   otpLabel: {
-    color: '#E2E8F0',
+    color: '#334155',
     fontSize: 14,
     fontWeight: '800',
   },
@@ -369,9 +431,9 @@ const styles = StyleSheet.create({
     height: 54,
     borderRadius: 16,
     borderWidth: 1,
-    borderColor: '#334155',
-    backgroundColor: '#0B1120',
-    color: '#fff',
+    borderColor: '#CBD5E1',
+    backgroundColor: '#fff',
+    color: '#0F172A',
     paddingHorizontal: 16,
     letterSpacing: 8,
     fontSize: 18,

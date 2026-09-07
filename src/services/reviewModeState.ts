@@ -2,11 +2,11 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import type {
   BookingActiveResponse,
   LeadOrderItem,
-  PlanResponse,
   User,
 } from '../types';
 import type {
   AuthUserProfile,
+  PlanResponse,
   SubscriptionVerifyResponse,
   VendorFaceStatus,
   VendorOnboardingStatus,
@@ -582,7 +582,10 @@ export const ReviewModeStateService = {
     return state.activeBooking || null;
   },
 
-  buildBookingActiveResponse(booking: ReviewModeBookingState, leadItems: LeadOrderItem[]): BookingActiveResponse {
+  buildBookingActiveResponse(
+    booking: ReviewModeBookingState,
+    leadItems: Array<LeadOrderItem & { rate_per_unit?: number; actual_weight_kg?: number }>,
+  ): BookingActiveResponse {
     return {
       booking_id: booking.bookingId,
       status: booking.status,

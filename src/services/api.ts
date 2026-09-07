@@ -258,6 +258,7 @@ export interface VendorReviewHubResponse {
 export interface VendorLeadSummary {
   id: string;
   order_number: string;
+  total_weight?: string | number | null;
   estimated_value?: string | number;
   scheduled_at?: string | null;
   items: Array<{ product: string; quantity: string; unit: string }>;
@@ -555,6 +556,9 @@ const mapLeadToBookingRequest = (lead: VendorLeadSummary): BookingRequest => {
   const itemCount = lead.items?.length || 0;
   const estimatedAmount = Number(lead.estimated_value || 0);
   const distance = Number(lead.distance_km || 0);
+  const totalWeight =
+    Number(lead.total_weight || 0) ||
+    (lead.items || []).reduce((sum, item) => sum + Number(item.quantity || 0), 0);
   const addressParts = [
     lead.address?.area,
     lead.address?.city,
@@ -567,6 +571,8 @@ const mapLeadToBookingRequest = (lead: VendorLeadSummary): BookingRequest => {
 
   return {
     id: lead.id,
+    displayId: lead.order_number || lead.id,
+    orderNumber: lead.order_number || lead.id,
     scrapType: itemCount > 1 ? `${firstItem?.product || 'Mixed Scrap'} +${itemCount - 1} more` : firstItem?.product || 'Mixed Scrap',
     distance: `${distance.toFixed(1)} km`,
     customerName: 'Pickup Request',
@@ -577,6 +583,7 @@ const mapLeadToBookingRequest = (lead: VendorLeadSummary): BookingRequest => {
     createdAt: lead.scheduled_at ? new Date(lead.scheduled_at) : new Date(),
     priority,
     estimatedTime: distance > 0 ? `${Math.max(10, Math.round((distance / 25) * 60))} mins` : '15 mins',
+    estimatedWeight: totalWeight > 0 ? `${Number(totalWeight.toFixed(2)).toLocaleString('en-IN')} kg` : undefined,
   };
 };
 
@@ -1224,6 +1231,7 @@ export class ApiService {
       return {
         booking: {
           id: activeBooking.bookingId,
+          order_number: activeBooking.bookingId,
           status: activeBooking.status,
           created_at: new Date().toISOString(),
           pickup_address: reviewerSeed.serviceArea,
@@ -1237,7 +1245,10 @@ export class ApiService {
           items: (activeBooking.selectedItems || []).map((item) => ({
             product_name: item.product_name,
             product: item.product_name,
+            quantity: item.quantity,
+            unit: item.unit,
           })),
+          total_weight: (activeBooking.selectedItems || []).reduce((sum, item) => sum + Number(item.quantity || 0), 0),
         },
       };
     }

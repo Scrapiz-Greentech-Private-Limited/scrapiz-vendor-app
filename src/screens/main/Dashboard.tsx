@@ -505,6 +505,9 @@ export default function Dashboard({ onBookingSelect, onNavigate, onShowToast, ha
                         <View className="flex-1 pr-1">
                           <View className="flex-row items-start justify-between gap-x-3">
                             <View className="flex-1 pr-2">
+                              <Text className="mb-1 text-[12px] leading-[16px] text-[#567165] font-black">
+                                {booking.displayId || booking.orderNumber || booking.id}
+                              </Text>
                               <Text className="text-[13px] leading-[18px] text-[#1B7332] font-extrabold">
                                 {booking.scrapType}
                               </Text>
@@ -541,6 +544,10 @@ export default function Dashboard({ onBookingSelect, onNavigate, onShowToast, ha
                             <View className="flex-row items-center">
                               <MaterialIcons name="schedule" size={14} color="#1B7332" />
                               <Text className="text-[13px] text-gray-500 ml-1">{booking.estimatedTime || '15 mins'}</Text>
+                            </View>
+                            <View className="flex-row items-center">
+                              <MaterialIcons name="scale" size={14} color="#1B7332" />
+                              <Text className="text-[13px] text-gray-500 ml-1">{booking.estimatedWeight || 'Weight pending'}</Text>
                             </View>
                           </View>
                         </View>

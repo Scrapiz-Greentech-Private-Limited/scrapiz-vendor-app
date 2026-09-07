@@ -254,8 +254,11 @@ export const buildFallbackBookings = async (): Promise<BookingRequest[]> => {
     return {
       id: bookingId,
       ...FALLBACK_BOOKING_SHELL[index],
+      displayId: `SCPARTNER#${String(index + 1).padStart(3, '0')}`,
+      orderNumber: `SCPARTNER#${String(index + 1).padStart(3, '0')}`,
       scrapType: makeScrapTypeLabel(items),
       estimatedAmount: Math.round((estimate.estimated_value_min + estimate.estimated_value_max) / 2),
+      estimatedWeight: `${items.reduce((sum, item) => sum + Number(item.quantity || 0), 0).toLocaleString('en-IN')} kg`,
       createdAt: new Date(),
     };
   });
@@ -277,6 +280,7 @@ export const buildFallbackLead = async (booking: BookingRequest, leadId: string)
     estimated_minutes: 15,
     is_urgent: booking.priority === 'high',
     pickup_address: booking.address,
+    customer_note: '',
     pickup_lat: 19.0176,
     pickup_lng: 72.8174,
     customer: {
@@ -287,7 +291,8 @@ export const buildFallbackLead = async (booking: BookingRequest, leadId: string)
       is_verified: booking.isVerified ?? true,
     },
     order: {
-      order_number: booking.id,
+      order_number: booking.orderNumber || booking.displayId || booking.id,
+      total_weight: items.reduce((sum, item) => sum + Number(item.quantity || 0), 0),
       estimated_value_min,
       estimated_value_max,
       scheduled_at: new Date().toISOString(),

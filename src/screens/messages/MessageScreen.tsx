@@ -5,6 +5,7 @@ import {
   Linking,
   Modal,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -95,7 +96,11 @@ const MessageScreen = ({ onBack, onNavigate, onShowToast }: MessageScreenProps) 
 
   return (
     <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
-      <View style={styles.content}>
+      <ScrollView
+        contentContainerStyle={styles.content}
+        showsVerticalScrollIndicator={false}
+        bounces
+      >
         <View style={styles.headerRow}>
           <TouchableOpacity style={styles.headerButton} onPress={onBack} activeOpacity={0.8}>
             <Ionicons name="arrow-back" size={22} color="#0B2D1C" />
@@ -151,7 +156,7 @@ const MessageScreen = ({ onBack, onNavigate, onShowToast }: MessageScreenProps) 
             <Ionicons name="arrow-forward" size={20} color="#FFFFFF" />
           </TouchableOpacity>
         </View>
-      </View>
+      </ScrollView>
 
       <Modal visible={isSocialSheetVisible} transparent animationType="none" onRequestClose={closeSocialSheet}>
         <Pressable style={styles.sheetOverlay} onPress={closeSocialSheet}>
@@ -188,10 +193,9 @@ const styles = StyleSheet.create({
     backgroundColor: '#F4FBF6',
   },
   content: {
-    flex: 1,
     paddingHorizontal: 22,
     paddingTop: 8,
-    paddingBottom: 116,
+    paddingBottom: 178,
   },
   headerRow: {
     alignItems: 'center',
@@ -227,7 +231,7 @@ const styles = StyleSheet.create({
   supportImage: {
     alignSelf: 'center',
     width: '100%',
-    height: 278,
+    height: 252,
     marginTop: 8,
     marginBottom: 2,
   },

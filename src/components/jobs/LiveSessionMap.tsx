@@ -1,7 +1,6 @@
 import React, { useMemo } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import Mapbox from '@rnmapbox/maps';
-import { MaterialIcons } from '@expo/vector-icons';
 import { MAP_CONFIG } from '../../config/mapConfig';
 import { ensureMapboxConfigured } from '../../config/mapbox';
 
@@ -18,6 +17,11 @@ interface LiveSessionMapProps {
   height?: number;
   location?: CoordinatePoint;
   label?: string;
+  mapStyleURL?: string;
+  routeCoordinates?: [number, number][];
+  routeColor?: string;
+  routeDashed?: boolean;
+  showOverlay?: boolean;
 }
 
 const LiveSessionMap: React.FC<LiveSessionMapProps> = ({
@@ -26,6 +30,11 @@ const LiveSessionMap: React.FC<LiveSessionMapProps> = ({
   height = 250,
   location,
   label,
+  mapStyleURL,
+  routeCoordinates,
+  routeColor = '#0EA5E9',
+  routeDashed = true,
+  showOverlay = true,
 }) => {
   const defaultLocation = {
     latitude: MAP_CONFIG.DEFAULT_CENTER[1],
@@ -43,7 +52,10 @@ const LiveSessionMap: React.FC<LiveSessionMapProps> = ({
   });
 
   const resolvedCustomerLocation = normalizeCoordinate(customerLocation || location, defaultLocation);
-  const fallbackVendorLocation = normalizeCoordinate(vendorLocation || location, resolvedCustomerLocation);
+  const fallbackVendorLocation = normalizeCoordinate(vendorLocation, {
+    latitude: resolvedCustomerLocation.latitude + 0.012,
+    longitude: resolvedCustomerLocation.longitude - 0.012,
+  });
 
   const routeGeoJson = useMemo(
     () => ({
@@ -53,7 +65,7 @@ const LiveSessionMap: React.FC<LiveSessionMapProps> = ({
           type: 'Feature',
           geometry: {
             type: 'LineString',
-            coordinates: [
+            coordinates: routeCoordinates && routeCoordinates.length >= 2 ? routeCoordinates : [
               [fallbackVendorLocation.longitude, fallbackVendorLocation.latitude],
               [resolvedCustomerLocation.longitude, resolvedCustomerLocation.latitude],
             ],
@@ -62,7 +74,7 @@ const LiveSessionMap: React.FC<LiveSessionMapProps> = ({
         },
       ],
     }),
-    [fallbackVendorLocation, resolvedCustomerLocation],
+    [fallbackVendorLocation, resolvedCustomerLocation, routeCoordinates],
   );
 
   const centerCoordinate: [number, number] = [
@@ -74,7 +86,7 @@ const LiveSessionMap: React.FC<LiveSessionMapProps> = ({
     <View style={[styles.wrapper, { height }]}>
       <Mapbox.MapView
         style={styles.map}
-        styleURL={MAP_CONFIG.DEFAULT_MAP_STYLE}
+        styleURL={mapStyleURL || MAP_CONFIG.DEFAULT_MAP_STYLE}
         logoEnabled={false}
         attributionEnabled={false}
         rotateEnabled={false}
@@ -85,10 +97,10 @@ const LiveSessionMap: React.FC<LiveSessionMapProps> = ({
           <Mapbox.LineLayer
             id="vendor-customer-route-line"
             style={{
-              lineColor: '#0EA5E9',
-              lineWidth: 3,
-              lineDasharray: [2, 2],
-              lineOpacity: 0.8,
+              lineColor: routeColor,
+              lineWidth: 4,
+              lineOpacity: 0.92,
+              ...(routeDashed ? { lineDasharray: [2, 2] } : {}),
             }}
           />
         </Mapbox.ShapeSource>
@@ -96,30 +108,34 @@ const LiveSessionMap: React.FC<LiveSessionMapProps> = ({
         <Mapbox.PointAnnotation
           id="customer-pin"
           coordinate={[resolvedCustomerLocation.longitude, resolvedCustomerLocation.latitude]}
+          anchor={{ x: 0.5, y: 0.5 }}
         >
-          <View style={[styles.pin, styles.customerPin]}>
-            <MaterialIcons name="home" size={18} color="#FFFFFF" />
+          <View style={[styles.nativePin, styles.customerPin]}>
+            <View style={[styles.nativePinInner, styles.customerPinInner]} />
           </View>
         </Mapbox.PointAnnotation>
 
         <Mapbox.PointAnnotation
           id="vendor-pin"
           coordinate={[fallbackVendorLocation.longitude, fallbackVendorLocation.latitude]}
+          anchor={{ x: 0.5, y: 0.5 }}
         >
-          <View style={[styles.pin, styles.vendorPin]}>
-            <MaterialIcons name="local-shipping" size={18} color="#FFFFFF" />
+          <View style={[styles.nativePin, styles.vendorPin]}>
+            <View style={[styles.nativePinInner, styles.vendorPinInner]} />
           </View>
         </Mapbox.PointAnnotation>
       </Mapbox.MapView>
 
-      <View style={styles.overlay}>
-        <View style={styles.badge}>
-          <Text style={styles.badgeTitle}>Live Pickup Map</Text>
-          <Text style={styles.badgeSubtitle}>
-            {label || (vendorLocation ? 'Your live position is updating' : 'Waiting for your GPS position')}
-          </Text>
+      {showOverlay ? (
+        <View style={styles.overlay}>
+          <View style={styles.badge}>
+            <Text style={styles.badgeTitle}>Live Pickup Map</Text>
+            <Text style={styles.badgeSubtitle}>
+              {label || (vendorLocation ? 'Your live position is updating' : 'Waiting for your GPS position')}
+            </Text>
+          </View>
         </View>
-      </View>
+      ) : null}
     </View>
   );
 };
@@ -155,19 +171,35 @@ const styles = StyleSheet.create({
     fontSize: 12,
     marginTop: 2,
   },
-  pin: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+  nativePin: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
     alignItems: 'center',
     justifyContent: 'center',
-    borderWidth: 2,
-    borderColor: '#FFFFFF',
+    shadowColor: '#000000',
+    shadowOpacity: 0.28,
+    shadowRadius: 5,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 5,
   },
   customerPin: {
-    backgroundColor: '#16A34A',
+    backgroundColor: 'rgba(22, 163, 74, 0.24)',
   },
   vendorPin: {
+    backgroundColor: 'rgba(37, 99, 235, 0.24)',
+  },
+  nativePinInner: {
+    width: 17,
+    height: 17,
+    borderRadius: 9,
+    borderWidth: 3,
+    borderColor: '#FFFFFF',
+  },
+  customerPinInner: {
+    backgroundColor: '#16A34A',
+  },
+  vendorPinInner: {
     backgroundColor: '#2563EB',
   },
 });

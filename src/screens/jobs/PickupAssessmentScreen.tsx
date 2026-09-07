@@ -9,6 +9,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons, MaterialIcons } from '@expo/vector-icons';
 import { ApiHttpError, ApiService } from '../../services/api';
 import { LeadOrderItem } from '../../types';
@@ -107,6 +108,7 @@ const PickupAssessmentScreen: React.FC<PickupAssessmentScreenProps> = ({
   };
 
   return (
+    <SafeAreaView style={styles.safeArea}>
     <View style={styles.container}>
       <View style={styles.header}>
         <TouchableOpacity onPress={onBack} style={styles.backButton}>
@@ -131,7 +133,7 @@ const PickupAssessmentScreen: React.FC<PickupAssessmentScreenProps> = ({
         renderItem={({ item }) => {
           const checked = selectedIds.has(String(item.product_id));
           const showFallbackVisuals = Boolean(item.is_fallback);
-          const showFallbackImage = Boolean(item.is_fallback && item.image_url);
+          const showBackendImage = Boolean(item.image_url);
 
           return (
             <TouchableOpacity
@@ -139,7 +141,7 @@ const PickupAssessmentScreen: React.FC<PickupAssessmentScreenProps> = ({
               onPress={() => toggleSelection(item.product_id)}
               activeOpacity={0.9}
             >
-              {showFallbackImage ? (
+              {showBackendImage ? (
                 <Image source={{ uri: item.image_url }} style={styles.itemImage} />
               ) : (
                 <View style={[styles.itemImage, !checked && styles.itemImageMuted]}>
@@ -185,9 +187,42 @@ const PickupAssessmentScreen: React.FC<PickupAssessmentScreenProps> = ({
         }}
       />
 
-      <View style={styles.bottomWrap}>
+      <View style={[styles.bottomWrap, items.length <= 1 && styles.bottomWrapCompact]}>
+        <View style={styles.calculationCard}>
+          <View style={styles.calculationHeader}>
+            <View>
+              <Text style={styles.calculationEyebrow}>CALCULATION</Text>
+              <Text style={styles.calculationTitle}>Estimated payout breakdown</Text>
+            </View>
+            <MaterialIcons name="receipt-long" size={22} color="#166534" />
+          </View>
+          <View style={styles.tableHeader}>
+            <Text style={[styles.tableHeaderText, styles.tableMaterial]}>Material</Text>
+            <Text style={styles.tableHeaderText}>Qty</Text>
+            <Text style={[styles.tableHeaderText, styles.tableRate]}>Standard rate</Text>
+            <Text style={[styles.tableHeaderText, styles.tableAmount]}>Payout</Text>
+          </View>
+          {selectedItems.map((item) => {
+            const quantity = Number(item.quantity || 0);
+            const minRate = Number(item.min_rate || 0);
+            const maxRate = Number(item.max_rate || 0);
+            return (
+              <View key={String(item.product_id)} style={styles.tableRow}>
+                <Text style={[styles.tableCell, styles.tableMaterial]} numberOfLines={1}>{item.product_name}</Text>
+                <Text style={styles.tableCell}>{quantity} {item.unit}</Text>
+                <Text style={[styles.tableCell, styles.tableRate]}>₹{minRate}–₹{maxRate}/{item.unit}</Text>
+                <Text style={[styles.tableCellStrong, styles.tableAmount]}>₹{Math.round(quantity * minRate)}–₹{Math.round(quantity * maxRate)}</Text>
+              </View>
+            );
+          })}
+          <View style={styles.tableTotalRow}>
+            <Text style={styles.tableTotalLabel}>Estimated total</Text>
+            <Text style={styles.tableTotalValue}>{formatCurrency(selectedEstimate.minTotal)}–{formatCurrency(selectedEstimate.maxTotal)}</Text>
+          </View>
+          <Text style={styles.auditNote}>Calculated from requested quantity × standard material rate. Final payout is confirmed after weighing.</Text>
+        </View>
         <View style={styles.summaryCard}>
-          <Text style={styles.summaryLabel}>Estimated Payout</Text>
+          <Text style={styles.summaryLabel}>Your estimated payout</Text>
           <Text style={styles.summaryAmount}>
             {formatCurrency(selectedEstimate.minTotal)} - {formatCurrency(selectedEstimate.maxTotal)}
           </Text>
@@ -219,16 +254,18 @@ const PickupAssessmentScreen: React.FC<PickupAssessmentScreenProps> = ({
         </TouchableOpacity>
       </View>
     </View>
+    </SafeAreaView>
   );
 };
 
 const styles = StyleSheet.create({
+  safeArea: { flex: 1, backgroundColor: '#F4F7F5' },
   container: { flex: 1, backgroundColor: '#F4F7F5' },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 18,
-    paddingTop: 16,
+    paddingTop: 8,
     paddingBottom: 12,
     backgroundColor: '#FFFFFF',
   },
@@ -241,7 +278,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#F1F5F9',
   },
   headerCopy: { marginLeft: 12, flex: 1 },
-  headerTitle: { fontSize: 28, fontWeight: '800', color: '#0F172A' },
+  headerTitle: { fontSize: 25, lineHeight: 30, fontWeight: '800', color: '#0F172A' },
   headerSubtitle: { marginTop: 4, color: '#64748B' },
   infoBanner: {
     flexDirection: 'row',
@@ -261,10 +298,26 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     backgroundColor: '#FFFFFF',
     borderRadius: 24,
-    padding: 16,
+    padding: 12,
     borderWidth: 1,
     borderColor: '#E4EBE6',
   },
+  calculationCard: { borderRadius: 18, backgroundColor: '#F8FBF9', borderWidth: 1, borderColor: '#D9E9DE', padding: 12 },
+  calculationHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 },
+  calculationEyebrow: { color: '#16A34A', fontSize: 10, fontWeight: '900', letterSpacing: 1.2 },
+  calculationTitle: { color: '#123C2D', fontSize: 15, fontWeight: '900', marginTop: 2 },
+  tableHeader: { flexDirection: 'row', alignItems: 'center', paddingBottom: 7, borderBottomWidth: 1, borderBottomColor: '#DCE8DF' },
+  tableHeaderText: { flex: 1, color: '#64748B', fontSize: 10, fontWeight: '800', textTransform: 'uppercase' },
+  tableRow: { flexDirection: 'row', alignItems: 'center', minHeight: 34, borderBottomWidth: 1, borderBottomColor: '#E8F0EA' },
+  tableCell: { flex: 1, color: '#334155', fontSize: 10, fontWeight: '600' },
+  tableCellStrong: { flex: 1, color: '#14532D', fontSize: 10, fontWeight: '900' },
+  tableMaterial: { flex: 1.25 },
+  tableRate: { flex: 1.35 },
+  tableAmount: { flex: 1.25, textAlign: 'right' },
+  tableTotalRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingTop: 9 },
+  tableTotalLabel: { color: '#123C2D', fontSize: 12, fontWeight: '800' },
+  tableTotalValue: { color: '#166534', fontSize: 14, fontWeight: '900' },
+  auditNote: { color: '#64748B', fontSize: 10, lineHeight: 14, marginTop: 7 },
   itemCardUnchecked: {
     backgroundColor: '#F8FAFC',
     opacity: 0.72,
@@ -351,9 +404,14 @@ const styles = StyleSheet.create({
     bottom: 16,
     borderRadius: 24,
     backgroundColor: '#FFFFFF',
-    padding: 16,
+    padding: 12,
+    maxHeight: '58%',
     borderWidth: 1,
     borderColor: '#E5ECE7',
+  },
+  bottomWrapCompact: {
+    bottom: 48,
+    maxHeight: '64%',
   },
   summaryCard: {
     borderRadius: 20,

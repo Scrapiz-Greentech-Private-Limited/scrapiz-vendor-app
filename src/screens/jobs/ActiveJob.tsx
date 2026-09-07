@@ -8,7 +8,6 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import * as ImagePicker from 'expo-image-picker';
 import { Ionicons, MaterialIcons } from '@expo/vector-icons';
 import ArrivalVerifyScreen from '../booking/ArrivalVerifyScreen';
 import LiveSessionMap from '../../components/jobs/LiveSessionMap';
@@ -117,11 +116,10 @@ const ActiveJob: React.FC<ActiveJobProps> = ({
   const [isActionLoading, setIsActionLoading] = useState(false);
   const [trackingGateDismissed, setTrackingGateDismissed] = useState(false);
   const [arrivalSheetVisible, setArrivalSheetVisible] = useState(false);
-  const [selfieUploading, setSelfieUploading] = useState(false);
-  const [selfieRemoteUrl, setSelfieRemoteUrl] = useState('');
   const [otpSent, setOtpSent] = useState(false);
   const [otpCode, setOtpCode] = useState('');
   const [showArrivalVerify, setShowArrivalVerify] = useState(false);
+  const [arrivalVerifyDismissed, setArrivalVerifyDismissed] = useState(false);
 
   const loadActive = useCallback(async () => {
     try {
@@ -274,14 +272,15 @@ const ActiveJob: React.FC<ActiveJobProps> = ({
   useEffect(() => {
     if (stepKey !== 'en_route') {
       setTrackingGateDismissed(false);
+      setArrivalVerifyDismissed(false);
     }
   }, [stepKey]);
 
   useEffect(() => {
-    if (stepKey === 'en_route' && liveDistanceMeters !== null && liveDistanceMeters <= 300) {
+    if (!arrivalVerifyDismissed && stepKey === 'en_route' && liveDistanceMeters !== null && liveDistanceMeters <= 300) {
       setShowArrivalVerify(true);
     }
-  }, [liveDistanceMeters, stepKey]);
+  }, [arrivalVerifyDismissed, liveDistanceMeters, stepKey]);
 
   const handleCall = () => {
     if (!activeData?.customer?.phone || activeData.customer.phone_masked) {
@@ -293,62 +292,12 @@ const ActiveJob: React.FC<ActiveJobProps> = ({
 
   const resetArrivalModal = () => {
     setArrivalSheetVisible(false);
-    setSelfieUploading(false);
-    setSelfieRemoteUrl('');
     setOtpSent(false);
     setOtpCode('');
   };
 
-  const captureAndUploadSelfie = async () => {
-    try {
-      const permission = await ImagePicker.requestCameraPermissionsAsync();
-      if (!permission.granted) {
-        onShowToast('Camera permission is required for arrival verification.', 'error');
-        return;
-      }
-
-      const result = await ImagePicker.launchCameraAsync({
-        mediaTypes: 'images',
-        quality: 0.8,
-        allowsEditing: false,
-        cameraType: ImagePicker.CameraType.front,
-      });
-
-      if (result.canceled || !result.assets?.length) {
-        return;
-      }
-
-      const asset = result.assets[0];
-      setSelfieUploading(true);
-
-      await ApiService.uploadVendorFaceImageFile({
-        face_image: {
-          uri: asset.uri,
-          name: 'arrival-selfie.jpg',
-          type: asset.mimeType || 'image/jpeg',
-        },
-      });
-
-      const profile = await ApiService.getVendorProfile();
-      const uploadedUrl = profile?.biometric?.source_image_url;
-
-      if (!uploadedUrl) {
-        onShowToast('Selfie uploaded but URL not returned. Please try again.', 'error');
-        return;
-      }
-
-      setSelfieRemoteUrl(uploadedUrl);
-      onShowToast('Selfie uploaded. Send OTP to customer now.', 'success');
-    } catch (error: any) {
-      onShowToast(error?.message || 'Failed to upload selfie for arrival verification.', 'error');
-    } finally {
-      setSelfieUploading(false);
-    }
-  };
-
   const sendArrivalOtp = async () => {
-    if (!activeData || !selfieRemoteUrl) {
-      onShowToast('Capture selfie before sending OTP.', 'error');
+    if (!activeData) {
       return;
     }
 
@@ -358,7 +307,7 @@ const ActiveJob: React.FC<ActiveJobProps> = ({
     setIsActionLoading(true);
     try {
       await ApiService.initiateArrivalVerification(activeData.booking_id, {
-        selfie_url: selfieRemoteUrl,
+        selfie_url: '',
         vendor_latitude: latitude,
         vendor_longitude: longitude,
       });
@@ -415,7 +364,7 @@ const ActiveJob: React.FC<ActiveJobProps> = ({
     }
 
     if (stepKey === 'en_route') {
-      setArrivalSheetVisible(true);
+      setShowArrivalVerify(true);
       return;
     }
 
@@ -458,17 +407,18 @@ const ActiveJob: React.FC<ActiveJobProps> = ({
           bookingId,
           selectedItems: mergedSelectedItems,
         }}
-        onBack={() => setShowArrivalVerify(false)}
+        onBack={() => {
+          setArrivalVerifyDismissed(true);
+          setShowArrivalVerify(false);
+        }}
         onVerified={async () => {
           setShowArrivalVerify(false);
-          try {
-            await ApiService.markBookingArrived(bookingId);
-            await loadActive();
-            onShowToast('Arrival verified successfully.', 'success');
-          } catch {
-            onShowToast('Arrival was verified, but booking status could not be updated.', 'error');
-          }
+          setOtpSent(false);
+          setOtpCode('');
+          setArrivalSheetVisible(true);
+          onShowToast('Face verified. Send the arrival OTP to the customer.', 'success');
         }}
+        onError={(message) => onShowToast(message, 'error')}
       />
     );
   }
@@ -485,6 +435,8 @@ const ActiveJob: React.FC<ActiveJobProps> = ({
         expectedDistanceKm={activeData.distance_km}
         customerName={customerName}
         pickupAddress={activeData.pickup_address}
+        customerRating={activeData.customer?.rating}
+        materials={mergedSelectedItems}
         onContinue={() => setTrackingGateDismissed(true)}
         onBack={onBack}
       />
@@ -595,13 +547,14 @@ const ActiveJob: React.FC<ActiveJobProps> = ({
 
       <ArrivalOtpBottomSheet
         visible={arrivalSheetVisible}
-        selfieUploading={selfieUploading}
-        selfieRemoteUrl={selfieRemoteUrl}
+        booking={activeData}
+        selectedItems={mergedSelectedItems}
+        vendorCoordinates={vendorCoords}
+        pickupCoordinates={pickupCoordinates}
         otpSent={otpSent}
         otpCode={otpCode}
         isActionLoading={isActionLoading}
         onClose={resetArrivalModal}
-        onCaptureSelfie={() => void captureAndUploadSelfie()}
         onSendOtp={() => void sendArrivalOtp()}
         onVerifyOtp={() => void verifyArrivalOtp()}
         onChangeOtp={setOtpCode}

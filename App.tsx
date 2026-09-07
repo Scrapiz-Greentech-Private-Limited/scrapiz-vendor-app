@@ -105,19 +105,29 @@ SplashScreen.preventAutoHideAsync();
 
 type CurrentBookingSnapshot = {
   id: string | number;
+  booking_id?: string | number;
+  order_number?: string;
   status?: string;
   created_at?: string;
   pickup_address?: string;
   pickup_lat?: number | string;
   pickup_lng?: number | string;
+  estimated_order_value?: number | string | null;
   customer?: {
     name?: string;
     phone?: string;
     address?: string;
   };
   items?: Array<{
+    product_id?: string | number;
     product?: string;
     product_name?: string;
+    quantity?: number | string;
+    unit?: string;
+    min_rate?: number;
+    max_rate?: number;
+    image_url?: string | null;
+    category?: string | null;
   }>;
 };
 
@@ -186,12 +196,12 @@ const getBookingStateService = () => {
 };
 
 const mapCurrentBookingToActiveJob = (booking: CurrentBookingSnapshot): ActiveJobType => {
-  const bookingId = String(booking.id);
+  const bookingId = String(booking.booking_id || booking.id);
   const fallbackLat = 19.076;
   const fallbackLng = 72.8777;
 
   return {
-    id: bookingId,
+    id: String(booking.order_number || bookingId),
     bookingId,
     scrapType: summarizeScrapType(booking.items),
     distance: '-',
@@ -199,14 +209,23 @@ const mapCurrentBookingToActiveJob = (booking: CurrentBookingSnapshot): ActiveJo
     customerPhone: booking.customer?.phone || '',
     address: booking.customer?.address || booking.pickup_address || 'Address available in active booking',
     paymentMode: 'Pending',
-    estimatedAmount: 0,
+    estimatedAmount: toNumberOr(booking.estimated_order_value, 0),
     createdAt: booking.created_at ? new Date(booking.created_at) : new Date(),
     status: mapCurrentBookingStatusToActiveStatus(booking.status),
     customerLocation: {
       lat: toNumberOr(booking.pickup_lat, fallbackLat),
       lng: toNumberOr(booking.pickup_lng, fallbackLng),
     },
-    selectedItems: [],
+    selectedItems: (booking.items || []).map((item, index) => ({
+      product_id: item.product_id ?? `${bookingId}-${index}`,
+      product_name: item.product_name || item.product || 'Material',
+      quantity: toNumberOr(item.quantity, 0),
+      unit: item.unit || 'kg',
+      min_rate: toNumberOr(item.min_rate, 0),
+      max_rate: toNumberOr(item.max_rate, 0),
+      image_url: item.image_url || undefined,
+      category: item.category || undefined,
+    })),
   };
 };
 
@@ -1030,7 +1049,14 @@ const AppContent = () => {
       case 'earnings':
         return <EarningsScreen onBack={handleBackToHome} />;
       case 'manage':
-        return <ManageScreen onBack={handleBackToHome} onNavigate={handleNavigate} activeBooking={activeJob} />;
+        return (
+          <ManageScreen
+            onBack={handleBackToHome}
+            onNavigate={handleNavigate}
+            onBookingSelect={handleBookingSelect}
+            activeBooking={activeJob}
+          />
+        );
       case 'profile':
         return <ProfileScreen onBack={handleBackToHome} onNavigate={handleNavigate} onShowToast={showToast} />;
       case 'message':
@@ -1096,17 +1122,6 @@ const AppContent = () => {
             request={selectedRequestItem} 
           />
         );
-      case 'active-jobs-list':
-        return <ActiveJob 
-          bookingId={'active-1'}
-          selectedItems={[]}
-          onProceedToCalculator={(bookingId, selectedItems) => {
-            setPriceCalculatorPayload({ bookingId, selectedItems });
-            setActiveTab('job-completion');
-          }}
-          onBack={handleBackToManage}
-          onShowToast={showToast}
-        />;
       case 'future-requests':
         return <FutureRequestsScreen onBack={handleBackToManage} />;
       case 'ongoing':

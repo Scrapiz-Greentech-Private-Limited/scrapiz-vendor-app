@@ -57,7 +57,7 @@ const ProgressSnackbar = ({
 
   useEffect(() => {
     Animated.timing(progressWidth, {
-      toValue: Math.max(0, Math.min(100, progress)),
+      toValue: Number.isFinite(Number(progress)) ? Math.max(0, Math.min(100, Number(progress))) : 0,
       duration: 360,
       easing: Easing.out(Easing.cubic),
       useNativeDriver: false,
@@ -120,7 +120,8 @@ const ProgressSnackbar = ({
     };
   }, [pulseAnim, rotateAnim, shimmerAnim, visible]);
 
-  const clampedProgress = Math.max(0, Math.min(100, progress));
+  const numericProgress = Number.isFinite(Number(progress)) ? Number(progress) : 0;
+  const clampedProgress = Math.max(0, Math.min(100, numericProgress));
 
   const rotate = rotateAnim.interpolate({
     inputRange: [0, 1],

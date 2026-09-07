@@ -29,11 +29,13 @@ type ManageTab = 'active' | 'current' | 'future' | 'cancelled';
 interface ManageScreenProps {
   onBack: () => void;
   onNavigate: (screen: string) => void;
+  onBookingSelect?: (booking: BookingRequest) => void;
   activeBooking?: ActiveJobType | null;
 }
 
 type ActiveBookingDisplay = {
   id: string;
+  bookingId: string;
   customerName: string;
   customerPhone: string;
   address: string;
@@ -119,13 +121,18 @@ const selectedItemsWeight = (items: ActiveJobType['selectedItems']) => {
 
 const activeResponseToDisplay = (booking: BookingActiveResponse): ActiveBookingDisplay => {
   const estimatedFromQuote = booking.quote?.total_amount;
-  const orderValue = typeof estimatedFromQuote === 'number' ? estimatedFromQuote : null;
-  const weight = booking.order_items?.length
-    ? `${booking.order_items.reduce((sum, item) => sum + toNumber(item.quantity), 0)} kg`
+  const estimatedFromOrder = toNumber(booking.estimated_order_value);
+  const orderValue = typeof estimatedFromQuote === 'number' ? estimatedFromQuote : estimatedFromOrder || null;
+  const totalWeight =
+    toNumber(booking.total_weight) ||
+    (booking.order_items?.length ? booking.order_items.reduce((sum, item) => sum + toNumber(item.quantity), 0) : 0);
+  const weight = totalWeight > 0
+    ? `${Number(totalWeight.toFixed(2)).toLocaleString('en-IN')} kg`
     : 'To verify';
 
   return {
-    id: booking.booking_id,
+    id: booking.order_number || booking.booking_id,
+    bookingId: booking.booking_id,
     customerName: booking.customer?.name || 'Customer',
     customerPhone: booking.customer?.phone || '',
     address: booking.pickup_address || 'Pickup address unavailable',
@@ -140,7 +147,8 @@ const activeResponseToDisplay = (booking: BookingActiveResponse): ActiveBookingD
 };
 
 const appActiveToDisplay = (booking: ActiveJobType): ActiveBookingDisplay => ({
-  id: booking.bookingId || booking.id,
+  id: booking.orderNumber || booking.displayId || booking.bookingId || booking.id,
+  bookingId: booking.bookingId || booking.id,
   customerName: booking.customerName,
   customerPhone: booking.customerPhone,
   address: booking.address,
@@ -164,13 +172,14 @@ const currentBookingToDisplay = (raw: any): ActiveBookingDisplay | null => {
     : [];
 
   return {
-    id: String(booking.id),
+    id: String(booking.order_number || booking.displayId || booking.id),
+    bookingId: String(booking.booking_id || booking.id),
     customerName: booking.customer?.name || booking.customerName || 'Customer',
     customerPhone: booking.customer?.phone || booking.customerPhone || '',
     address: booking.pickup_address || booking.address || booking.customer?.address || 'Pickup address unavailable',
     materials: booking.material_summary || itemNames.join(', ') || booking.scrapType || 'Materials unavailable',
-    estimatedAmount: typeof booking.estimated_amount === 'number' ? booking.estimated_amount : null,
-    weight: booking.estimated_weight || 'To verify',
+    estimatedAmount: toNumber(booking.estimated_amount ?? booking.estimated_order_value) || null,
+    weight: booking.estimated_weight || (toNumber(booking.total_weight) > 0 ? `${toNumber(booking.total_weight).toLocaleString('en-IN')} kg` : 'To verify'),
     customerLocation: {
       latitude: toNumber(booking.pickup_lat, fallbackVendorLocation.latitude),
       longitude: toNumber(booking.pickup_lng, fallbackVendorLocation.longitude),
@@ -178,7 +187,7 @@ const currentBookingToDisplay = (raw: any): ActiveBookingDisplay | null => {
   };
 };
 
-export default function ManageScreen({ onBack, onNavigate, activeBooking }: ManageScreenProps) {
+export default function ManageScreen({ onBack, onNavigate, onBookingSelect, activeBooking }: ManageScreenProps) {
   const [selectedTab, setSelectedTab] = useState<ManageTab>('active');
   const [activeDisplay, setActiveDisplay] = useState<ActiveBookingDisplay | null>(null);
   const [currentBookings, setCurrentBookings] = useState<BookingRequest[]>([]);
@@ -201,9 +210,9 @@ export default function ManageScreen({ onBack, onNavigate, activeBooking }: Mana
       const currentShell = currentBookingToDisplay(currentResponse);
       let nextActive = currentShell;
 
-      if (currentShell?.id) {
+      if (currentShell?.bookingId) {
         try {
-          const detailed = await ApiService.getBookingActive(currentShell.id);
+          const detailed = await ApiService.getBookingActive(currentShell.bookingId);
           nextActive = activeResponseToDisplay(detailed);
         } catch {
           nextActive = currentShell;
@@ -310,7 +319,7 @@ export default function ManageScreen({ onBack, onNavigate, activeBooking }: Mana
 
         {!isLoading && selectedTab === 'current' ? (
           hasCurrentBookings ? (
-            <CurrentBookingsPanel bookings={currentBookings} />
+            <CurrentBookingsPanel bookings={currentBookings} onOpenBooking={onBookingSelect} />
           ) : (
             <NoBookingsState onRefresh={() => loadBookings(true)} isRefreshing={isRefreshing} />
           )
@@ -354,7 +363,9 @@ function ActiveJobPanel({
 
       <View style={styles.activeCard}>
         <View style={styles.bookingHeader}>
-          <Text style={styles.bookingCode}>{booking.id}</Text>
+          <Text style={styles.bookingCode} numberOfLines={1} adjustsFontSizeToFit>
+            {booking.id}
+          </Text>
           <View style={styles.activeBadge}>
             <Text style={styles.activeBadgeText}>ACTIVE</Text>
           </View>
@@ -398,23 +409,39 @@ function ActiveJobPanel({
   );
 }
 
-function CurrentBookingsPanel({ bookings }: { bookings: BookingRequest[] }) {
+function CurrentBookingsPanel({
+  bookings,
+  onOpenBooking,
+}: {
+  bookings: BookingRequest[];
+  onOpenBooking?: (booking: BookingRequest) => void;
+}) {
   return (
     <View style={styles.bookingList}>
       {bookings.map((booking) => (
-        <View key={booking.id} style={styles.queueCard}>
+        <TouchableOpacity
+          key={booking.id}
+          style={styles.queueCard}
+          activeOpacity={0.88}
+          onPress={() => onOpenBooking?.(booking)}
+          disabled={!onOpenBooking}
+        >
           <View style={styles.queueTop}>
-            <Text style={styles.bookingCode}>{booking.id}</Text>
-            <Text style={styles.queueDate}>{formatDate(new Date(booking.createdAt))}</Text>
+            <Text style={styles.bookingCode} numberOfLines={1} adjustsFontSizeToFit>
+              {booking.displayId || booking.orderNumber || booking.id}
+            </Text>
+            <Text style={styles.queueDate} numberOfLines={1}>{formatDate(new Date(booking.createdAt))}</Text>
           </View>
-          <Text style={styles.queueCustomer}>{booking.customerName}</Text>
+          <Text style={styles.queueCustomer} numberOfLines={1}>
+            {booking.customerName}
+          </Text>
           <DetailRow icon="recycling" label="Materials" value={booking.scrapType} compact />
           <DetailRow icon="location-on" label="Address" value={booking.address} compact />
           <View style={styles.queueMeta}>
             <MetricTile label="Est. value" value={formatInr(booking.estimatedAmount)} icon="payments" compact />
             <MetricTile label="Weight" value={booking.estimatedWeight || 'To verify'} icon="scale" compact />
           </View>
-        </View>
+        </TouchableOpacity>
       ))}
     </View>
   );
@@ -459,7 +486,9 @@ function MetricTile({
     <View style={[styles.metricTile, compact && styles.metricTileCompact]}>
       <MaterialIcons name={icon} size={compact ? 18 : 20} color={HOME.green} />
       <Text style={styles.metricLabel}>{label}</Text>
-      <Text style={styles.metricValue}>{value}</Text>
+      <Text style={styles.metricValue} numberOfLines={1} adjustsFontSizeToFit>
+        {value}
+      </Text>
     </View>
   );
 }
@@ -603,7 +632,7 @@ const styles = StyleSheet.create({
     borderBottomColor: '#E7ECE8',
     backgroundColor: '#F7FBF8',
   },
-  bookingCode: { fontSize: 16, fontWeight: '900', color: HOME.ink },
+  bookingCode: { flex: 1, minWidth: 0, marginRight: 10, fontSize: 16, fontWeight: '900', color: HOME.ink },
   activeBadge: { borderRadius: 999, paddingHorizontal: 10, paddingVertical: 5, backgroundColor: '#DCFCE7' },
   activeBadgeText: { fontSize: 11, fontWeight: '900', color: '#166534' },
   customerLine: {
@@ -695,8 +724,8 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 6 },
     elevation: 2,
   },
-  queueTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  queueDate: { fontSize: 13, fontWeight: '900', color: HOME.greenMid },
+  queueTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', minWidth: 0 },
+  queueDate: { flexShrink: 0, fontSize: 13, fontWeight: '900', color: HOME.greenMid },
   queueCustomer: { marginTop: 10, fontSize: 19, fontWeight: '900', color: HOME.ink },
   queueMeta: { marginTop: 4, flexDirection: 'row', gap: 10 },
   emptyPanel: {
