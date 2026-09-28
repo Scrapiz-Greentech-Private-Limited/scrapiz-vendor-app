@@ -1,102 +1,102 @@
 {
-  "expo": {
-    "name": "Scrapiz Partner",
-    "slug": "scrapiz-vendor",
-    "version": "1.0.0",
-    "orientation": "portrait",
-    "icon": "./assets/images/image_splashScreen_green.jpg",
-    "scheme": "scrapizvendorapp",
-    "userInterfaceStyle": "light",
-    "newArchEnabled": true,
-    "ios": {
-      "supportsTablet": true
-    },
-    "android": {
-      "permissions": [
-        "ACCESS_COARSE_LOCATION",
-        "ACCESS_FINE_LOCATION",
-        "ACCESS_BACKGROUND_LOCATION",
-        "FOREGROUND_SERVICE",
-        "FOREGROUND_SERVICE_LOCATION"
-      ],
-      "adaptiveIcon": {
-        "foregroundImage": "./assets/images/android_icon.png",
-        "backgroundColor": "#16a34a"
-      },
-      "config": {
-        "googleMaps": {
-          "apiKey": "AIzaSyCXv6HR4agCc7eHo02CjVgN4yMVxbvQRqg"
-        }
-      },
-      "edgeToEdgeEnabled": true,
-      "predictiveBackGestureEnabled": false,
-      "package": "com.scrapizVendor.app",
-      "googleServicesFile": "./google-services1.json"
-    },
-    "notification": {
-      "icon": "./assets/images/android-icon-monochrome.png",
-      "color": "#16a34a"
-    },
-    "plugins": [
-      "expo-notifications",
-      [
-        "expo-splash-screen",
-        {
-          "image": "./assets/images/image_splashScreen_green.jpg",
-          "imageWidth": 200,
-          "resizeMode": "contain",
-          "backgroundColor": "#ffffff",
-          "dark": {
-            "backgroundColor": "#000000"
-          }
-        }
-      ],
-          [
-            "expo-location",
-            {
-              "locationWhenInUsePermission": "Allow $(PRODUCT_NAME) to access your location while using the app.",
-              "locationAlwaysAndWhenInUsePermission": "Allow $(PRODUCT_NAME) to use your location.",
-              "isAndroidBackgroundLocationEnabled": true,
-              "isAndroidForegroundServiceEnabled": true
-            }
-          ],
-      [
-        "@sentry/react-native/expo",
-        {
-          "url": "https://sentry.io/",
-          "project": "react-native",
-          "organization": "scrapiz-greentech-private-l-w6"
-        }
-      ],
-      ["@rnmapbox/maps", {
-        "RNMapboxMapsImpl": "mapbox",
-        "RNMapboxMapsDownloadToken": "${MAPBOX_DOWNLOADS_TOKEN}"
-      }],
-      ["./plugins/withMapboxAccessToken", {
-        "accessToken":
-            "process.env.EXPO_PUBLIC_MAPBOX_API_KEY || pk.eyJ1IjoiYXlhYW5hbWphZCIsImEiOiJjbWhxbW1veHcwdnB2MmpzNDA2emo1aWp3In0.Mc5kN89_lqGeagn5jWvvzA"
-            
-      }],
-      
-      "expo-localization",
-      "expo-video" 
-
+"expo": {
+  "name": "Scrapiz Partner",
+  "slug": "scrapiz-vendor",
+  "version": "1.0.0",
+  "orientation": "portrait",
+  "icon": "./assets/images/image_splashScreen_green.jpg",
+  "scheme": "scrapizvendorapp",
+  "userInterfaceStyle": "light",
+  "newArchEnabled": true,
+  "ios": {
+    "supportsTablet": true
+  },
+  "android": {
+    "permissions": [
+      "ACCESS_COARSE_LOCATION",
+      "ACCESS_FINE_LOCATION",
+      "ACCESS_BACKGROUND_LOCATION",
+      "FOREGROUND_SERVICE",
+      "FOREGROUND_SERVICE_LOCATION"
     ],
-    "experiments": {
-      "reactCompiler": true
+    "adaptiveIcon": {
+      "foregroundImage": "./assets/images/android_icon.png",
+      "backgroundColor": "#16a34a"
     },
-    "extra": {
-      "mapboxAccessToken": "${EXPO_PUBLIC_MAPBOX_API_KEY}",
-      "env":{
-        "EXPO_PUBLIC_API_URL": "https://api.scrapiz.in/api",
-        "EXPO_PUBLIC_API_BASE_URL": "https://api.scrapiz.in/api",
-        "EXPO_PUBLIC_ENABLE_VENDOR_FALLBACK_BOOKINGS": "false",
-        "EXPO_PUBLIC_VENDOR_FALLBACK_TESTING": "false",
-        "EXPO_PUBLIC_VENDOR_REVIEW_MODE": "live",
-        "EXPO_PUBLIC_FRONTEND_SECRET": "ScrapizVendor#0nn$(tab!z",
-        "EXPO_PUBLIC_VENDOR_FRONTEND_SECRET": "ScrapizVendor#0nn$(tab!z"
-        
+    "config": {
+      "googleMaps": {
+        "apiKey": "AIzaSyCXv6HR4agCc7eHo02CjVgN4yMVxbvQRqg"
       }
+    },
+    "edgeToEdgeEnabled": true,
+    "predictiveBackGestureEnabled": false,
+    "package": "com.scrapizVendor.app",
+    "googleServicesFile": "./google-services1.json"
+  },
+  "notification": {
+    "icon": "./assets/images/android-icon-monochrome.png",
+    "color": "#16a34a"
+  },
+  "plugins": [
+    "expo-notifications",
+    [
+      "expo-splash-screen",
+      {
+        "image": "./assets/images/image_splashScreen_green.jpg",
+        "imageWidth": 200,
+        "resizeMode": "contain",
+        "backgroundColor": "#ffffff",
+        "dark": {
+          "backgroundColor": "#000000"
+        }
+      }
+    ],
+        [
+          "expo-location",
+          {
+            "locationWhenInUsePermission": "Allow $(PRODUCT_NAME) to access your location while using the app.",
+            "locationAlwaysAndWhenInUsePermission": "Allow $(PRODUCT_NAME) to use your location.",
+            "isAndroidBackgroundLocationEnabled": true,
+            "isAndroidForegroundServiceEnabled": true
+          }
+        ],
+    [
+      "@sentry/react-native/expo",
+      {
+        "url": "https://sentry.io/",
+        "project": "react-native",
+        "organization": "scrapiz-greentech-private-l-w6"
+      }
+    ],
+    ["@rnmapbox/maps", {
+      "RNMapboxMapsImpl": "mapbox",
+      "RNMapboxMapsDownloadToken": "${MAPBOX_DOWNLOADS_TOKEN}"
+    }],
+    ["./plugins/withMapboxAccessToken", {
+      "accessToken":
+          "process.env.EXPO_PUBLIC_MAPBOX_API_KEY || pk.eyJ1IjoiYXlhYW5hbWphZCIsImEiOiJjbWhxbW1veHcwdnB2MmpzNDA2emo1aWp3In0.Mc5kN89_lqGeagn5jWvvzA"
+          
+    }],
+    
+    "expo-localization",
+    "expo-video" 
+
+  ],
+  "experiments": {
+    "reactCompiler": true
+  },
+  "extra": {
+    "mapboxAccessToken": "${EXPO_PUBLIC_MAPBOX_API_KEY}",
+    "env":{
+      "EXPO_PUBLIC_API_URL": "https://api.scrapiz.in/api",
+      "EXPO_PUBLIC_API_BASE_URL": "https://api.scrapiz.in/api",
+      "EXPO_PUBLIC_ENABLE_VENDOR_FALLBACK_BOOKINGS": "false",
+      "EXPO_PUBLIC_VENDOR_FALLBACK_TESTING": "false",
+      "EXPO_PUBLIC_VENDOR_REVIEW_MODE": "live",
+      "EXPO_PUBLIC_FRONTEND_SECRET": "ScrapizVendor#0nn$(tab!z",
+      "EXPO_PUBLIC_VENDOR_FRONTEND_SECRET": "ScrapizVendor#0nn$(tab!z"
+      
     }
   }
+}
 }

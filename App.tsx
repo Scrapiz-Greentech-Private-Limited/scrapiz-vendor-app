@@ -1139,6 +1139,12 @@ const AppContent = () => {
               document_back: documents.secondaryBackFile,
             });
             await ApiService.submitVendorVerification();
+            posthogClient.capture('onboarding_documents_submitted', {
+              document_types: ['aadhaar', documents.secondaryType],
+              document_count: 2,
+              includes_aadhaar_back: Boolean(documents.aadhaarBackFile),
+              includes_secondary_back: Boolean(documents.secondaryBackFile),
+            });
             await refreshVendorProfile();
             setPendingPersonalDetails(null);
             setPendingSignupDraft({});
@@ -1988,37 +1994,25 @@ export default Sentry.wrap(function App() {
       <LanguageProvider>
         <ThemeProvider>
           <ErrorBoundary>
-            <PostHogProvider
-              client={posthog}
-              options={{
-                host: "https://us.i.posthog.com",
-                enableSessionReplay: true,
-                sessionReplayConfig: {
-                  maskAllTextInputs: false,
-                  maskAllImages: false,
-                  captureLog: true,
-                  captureNetworkTelemetry: true,
-                  sampleRate: undefined,
-                  throttleDelayMs: 1000,
-                }
-              }}
-              autocapture={{
-                captureScreens: false,
-                captureTouches: true,
-                propsToCapture: ['testID'],
-              }}
-            >
-              <AuthProvider>
-                <BookingProvider>
-                  <NavigationContainer>
+            <NavigationContainer>
+              <PostHogProvider
+                client={posthog}
+                autocapture={{
+                  captureScreens: false,
+                  captureTouches: true,
+                  propsToCapture: ['testID'],
+                }}
+              >
+                <AuthProvider>
+                  <BookingProvider>
                     <View className="flex-1" style={reviewModeEnabled ? { paddingTop: TESTING_MODE_BANNER_HEIGHT } : undefined}>
                       <AppContent />
                       {reviewModeEnabled ? <TestingModeBanner /> : null}
                     </View>
-                  </NavigationContainer>
-                </BookingProvider>
-              </AuthProvider>
-            </PostHogProvider>
+                  </BookingProvider>
+                </AuthProvider>
+              </PostHogProvider>
+            </NavigationContainer>
           </ErrorBoundary>
         </ThemeProvider>
       </LanguageProvider>

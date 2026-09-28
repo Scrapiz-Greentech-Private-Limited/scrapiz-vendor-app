@@ -130,10 +130,6 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
   };
 
   const identifyUser = (currentUser: User) => {
-    if (!posthog?.identify) {
-      return;
-    }
-
     const setPayload: Record<string, string> = {
       name: currentUser.name,
       phone: currentUser.phone,
@@ -159,20 +155,18 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
       const vendorProfile = await ApiService.getVendorProfile();
       const merged = mapVendorToUser(baseUser, vendorProfile);
       await persistUser(merged);
-      identifyUser(merged);
       return merged;
     } catch (error) {
       if (isExpiredAuthError(error)) {
         await AuthStorageService.clearSession();
         setUser(null);
-        posthog?.reset?.();
+        posthog.reset();
         throw error;
       }
 
       if (error instanceof ApiHttpError && error.status === 404) {
         const merged = mapVendorToUser(baseUser, null);
         await persistUser(merged);
-        identifyUser(merged);
         return merged;
       }
 
@@ -187,7 +181,6 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
         // After 3 retries fall back to cached state — never block initial load.
         const merged = mapVendorToUser(baseUser, undefined);
         await persistUser(merged);
-        identifyUser(merged);
         return merged;
       }
 
@@ -201,7 +194,6 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
       // downgrading the account into a fresh onboarding flow.
       if (hasKnownVendorState) {
         await persistUser(baseUser);
-        identifyUser(baseUser);
         return baseUser;
       }
 
@@ -281,15 +273,15 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
       await AuthStorageService.setToken(session.jwt);
       const hydratedUser = await hydrateWithVendorProfile(baseUser);
 
-      posthog?.capture?.('vendor_logged_in', {
-        phone: hydratedUser.phone,
+      identifyUser(hydratedUser);
+      posthog.capture('vendor_logged_in', {
         has_vendor_profile: hydratedUser.hasVendorProfile ?? false,
       });
 
       return hydratedUser;
     } catch (error) {
-      posthog?.capture?.('vendor_login_failed', {
-        error_message: error instanceof Error ? error.message : 'Unknown error',
+      posthog.capture('vendor_login_failed', {
+        failure_type: error instanceof ApiHttpError ? 'api_error' : 'unknown_error',
       });
       throw error;
     } finally {
@@ -342,7 +334,6 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
 
       const merged = mapVendorToUser(currentUser as User, profile);
       await persistUser(merged);
-      identifyUser(merged);
       return merged;
     } finally {
       setIsLoading(false);
@@ -374,7 +365,6 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
       const profile = await ApiService.updateVendorProfile(payload);
       const merged = mapVendorToUser(currentUser as User, profile);
       await persistUser(merged);
-      identifyUser(merged);
       return merged;
     } finally {
       setIsLoading(false);
@@ -391,8 +381,8 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
           console.warn('Failed to unregister vendor push token:', error);
         }
       }
-      posthog?.capture?.('vendor_logged_out');
-      posthog?.reset?.();
+      posthog.capture('vendor_logged_out');
+      posthog.reset();
       setUser(null);
       if (isVendorReviewMode()) {
         await ReviewModeStateService.clear();

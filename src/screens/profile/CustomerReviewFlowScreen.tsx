@@ -11,6 +11,7 @@ import {
   View,
 } from 'react-native';
 import { Ionicons, MaterialIcons } from '@expo/vector-icons';
+import { usePostHog } from 'posthog-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ApiService, VendorPendingReviewBooking } from '../../services/api';
 import { getScrollContentBottomPadding } from '../../utils/safeAreaUtils';
@@ -57,7 +58,7 @@ type ReviewFormState = Record<AspectKey, number> & {
   recommendation: boolean;
   review_text: string;
   summary_title: string;
-  review_images: Array<{ uri: string; name: string; type: string }>;
+  review_images: { uri: string; name: string; type: string }[];
 };
 
 const StepPills = ({ activeStep }: { activeStep: number }) => (
@@ -99,6 +100,7 @@ const ScoreChooser = ({
 
 const CustomerReviewFlowScreen = ({ booking, onBack, onComplete, onShowToast }: CustomerReviewFlowScreenProps) => {
   const insets = useSafeAreaInsets();
+  const posthog = usePostHog();
   const [step, setStep] = useState<1 | 2 | 3>(1);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [form, setForm] = useState<ReviewFormState>({
@@ -189,6 +191,12 @@ const CustomerReviewFlowScreen = ({ booking, onBack, onComplete, onShowToast }: 
         review_text: form.review_text.trim(),
         summary_title: form.summary_title.trim(),
         review_images: form.review_images,
+      });
+      posthog.capture('customer_review_submitted', {
+        booking_id: booking.booking_id,
+        overall_rating: form.overall_rating,
+        recommendation: form.recommendation,
+        review_image_count: form.review_images.length,
       });
       setStep(3);
       onShowToast('Customer review submitted successfully.', 'success');
@@ -324,7 +332,7 @@ const CustomerReviewFlowScreen = ({ booking, onBack, onComplete, onShowToast }: 
           <>
             <View style={styles.calloutPill}>
               <MaterialIcons name="star" size={20} color="#4AAE9A" />
-              <Text style={styles.calloutText}>You gave it a strong score. We'd love to hear more about your experience.</Text>
+              <Text style={styles.calloutText}>You gave it a strong score. We&apos;d love to hear more about your experience.</Text>
             </View>
 
             <View style={[styles.mainCard, styles.detailCard]}>

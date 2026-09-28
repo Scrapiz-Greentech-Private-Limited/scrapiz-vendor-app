@@ -11,6 +11,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
 import RazorpayCheckout from 'react-native-razorpay';
+import { usePostHog } from 'posthog-react-native';
 import { isVendorReviewMode } from '../../config/reviewMode';
 import { ApiHttpError, ApiService } from '../../services/api';
 import { useAuth } from '../../../hooks/useAuth';
@@ -33,7 +34,7 @@ interface PaymentMethodScreenProps {
 
 type PaymentMethod = 'visa' | 'mastercard' | 'upi' | 'bank';
 
-const METHODS: Array<{ key: PaymentMethod; label: string; icon: keyof typeof MaterialIcons.glyphMap }> = [
+const METHODS: { key: PaymentMethod; label: string; icon: keyof typeof MaterialIcons.glyphMap }[] = [
   { key: 'visa', label: 'Visa', icon: 'credit-card' },
   { key: 'mastercard', label: 'Mastercard', icon: 'credit-card' },
   { key: 'upi', label: 'UPI Apps', icon: 'account-balance-wallet' },
@@ -47,6 +48,7 @@ export default function PaymentMethodScreen({
   onPaymentError,
 }: PaymentMethodScreenProps) {
   const { user } = useAuth();
+  const posthog = usePostHog();
   const reviewModeEnabled = isVendorReviewMode();
   const [method, setMethod] = useState<PaymentMethod>('visa');
   const [cardNumber, setCardNumber] = useState('');
@@ -85,6 +87,11 @@ export default function PaymentMethodScreen({
           razorpay_signature: 'review-signature',
         });
 
+        posthog.capture('wallet_recharge_completed', {
+          amount: razorpayAmount,
+          payment_method: method,
+          is_review_mode: true,
+        });
         onPaymentSuccess({
           transactionId,
           date: new Date().toISOString(),
@@ -119,6 +126,11 @@ export default function PaymentMethodScreen({
         razorpay_signature: paymentResult.razorpay_signature,
       });
 
+      posthog.capture('wallet_recharge_completed', {
+        amount: razorpayAmount,
+        payment_method: method,
+        is_review_mode: false,
+      });
       onPaymentSuccess({
         transactionId: paymentResult.razorpay_payment_id,
         date: new Date().toISOString(),

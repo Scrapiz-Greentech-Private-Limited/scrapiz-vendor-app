@@ -109,9 +109,8 @@ export default {
       reactCompiler: true,
     },
     extra: {
-      posthogApiKey: process.env.EXPO_PUBLIC_POSTHOG_API_KEY,
-      posthogHost:
-        process.env.EXPO_PUBLIC_POSTHOG_HOST || "https://us.i.posthog.com",
+      posthogProjectToken: process.env.EXPO_PUBLIC_POSTHOG_PROJECT_TOKEN,
+      posthogHost: process.env.EXPO_PUBLIC_POSTHOG_HOST,
       mapboxAccessToken: process.env.EXPO_PUBLIC_MAPBOX_API_KEY,
       env: {
         EXPO_PUBLIC_API_URL:

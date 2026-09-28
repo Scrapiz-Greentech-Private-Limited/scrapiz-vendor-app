@@ -1,39 +1,42 @@
-import PostHog from 'posthog-react-native'
 import Constants from 'expo-constants'
+import PostHog from 'posthog-react-native'
 
-const apiKey = Constants.expoConfig?.extra?.posthogApiKey as string | undefined
-const host = (Constants.expoConfig?.extra?.posthogHost as string) || 'https://us.i.posthog.com'
-const isPostHogConfigured = !!apiKey && apiKey !== 'phc_your_api_key_here'
+const projectToken = Constants.expoConfig?.extra?.posthogProjectToken as string | undefined
+const host = Constants.expoConfig?.extra?.posthogHost as string | undefined
+const isPostHogConfigured = Boolean(projectToken && host)
 
-if (__DEV__) {
-  console.log('PostHog config:', {
-    apiKey: apiKey ? 'SET' : 'NOT SET',
-    host,
-    isConfigured: isPostHogConfigured,
-  })
-}
-
-if (!isPostHogConfigured) {
-  console.warn(
-    'PostHog API key not configured. Analytics will be disabled. ' +
-      'Set POSTHOG_API_KEY in your .env.local file to enable analytics.'
+if (__DEV__ && !projectToken) {
+  console.error(
+    'EXPO_PUBLIC_POSTHOG_PROJECT_TOKEN variable required by PostHog is missing or un-configured, this causes events to be silently missed. This error stops appearing once EXPO_PUBLIC_POSTHOG_PROJECT_TOKEN is configured',
   )
 }
 
-export const posthog = new PostHog(apiKey || 'placeholder_key', {
-  host,
+if (__DEV__ && !host) {
+  console.error(
+    'EXPO_PUBLIC_POSTHOG_HOST variable required by PostHog is missing or un-configured, this causes events to be silently missed. This error stops appearing once EXPO_PUBLIC_POSTHOG_HOST is configured',
+  )
+}
+
+export const posthog = new PostHog(projectToken as string, {
+  host: host as string,
   disabled: !isPostHogConfigured,
   captureAppLifecycleEvents: true,
-  flushAt: 20,
-  flushInterval: 10000,
-  maxBatchSize: 100,
-  maxQueueSize: 1000,
-  preloadFeatureFlags: true,
-  sendFeatureFlagEvent: true,
-  featureFlagsRequestTimeoutMs: 10000,
-  requestTimeout: 10000,
-  fetchRetryCount: 3,
-  fetchRetryDelay: 3000,
+  errorTracking: {
+    autocapture: {
+      uncaughtExceptions: true,
+      unhandledRejections: true,
+      console: [],
+    },
+  },
+  enableSessionReplay: true,
+  sessionReplayConfig: {
+    maskAllTextInputs: false,
+    maskAllImages: false,
+    captureLog: true,
+    captureNetworkTelemetry: true,
+    sampleRate: undefined,
+    throttleDelayMs: 1000,
+  },
 })
 
 export const isPostHogEnabled = isPostHogConfigured
