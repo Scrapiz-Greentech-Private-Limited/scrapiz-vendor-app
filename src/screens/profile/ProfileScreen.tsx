@@ -4,7 +4,6 @@ import { MaterialIcons, Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '../../../hooks/useAuth';
 import { useLanguage } from '../../utils/i18n';
-import { useAppTheme } from '../../theme/appTheme';
 
 interface ProfileScreenProps {
   onBack: () => void;
@@ -15,7 +14,6 @@ interface ProfileScreenProps {
 const ProfileScreen = ({ onBack, onNavigate }: ProfileScreenProps) => {
   const { user, logout } = useAuth();
   const { t, language, setLanguage } = useLanguage();
-  const { theme, setTheme } = useAppTheme();
   const performanceRating = Number(user?.performanceRating ?? 5).toFixed(1);
 
   const handleLogout = () => {
@@ -53,10 +51,6 @@ const ProfileScreen = ({ onBack, onNavigate }: ProfileScreenProps) => {
   const handleLanguageSelect = async (code: string) => {
     await setLanguage(code as any);
     setIsLanguageModalVisible(false);
-  };
-
-  const handleThemeToggle = async () => {
-    await setTheme(theme === 'dark' ? 'light' : 'dark');
   };
 
   return (
@@ -149,7 +143,7 @@ const ProfileScreen = ({ onBack, onNavigate }: ProfileScreenProps) => {
           {/* Help & Support Section */}
           <Text style={styles.sectionTitle}>{t('help_support')}</Text>
           <View style={styles.optionsGroup}>
-            <TouchableOpacity style={styles.optionItem}>
+            <TouchableOpacity style={styles.optionItem} onPress={() => onNavigate('support-feedback')}>
               <View style={styles.optionLeft}>
                 <MaterialIcons name="thumb-up-off-alt" size={20} color="#333" />
                 <Text style={styles.optionText}>{t('give_us_feedback')}</Text>
@@ -210,16 +204,6 @@ const ProfileScreen = ({ onBack, onNavigate }: ProfileScreenProps) => {
 
             <View style={styles.divider} />
 
-            <TouchableOpacity style={styles.optionItem} onPress={() => onNavigate('contacts')}>
-              <View style={styles.optionLeft}>
-                <MaterialIcons name="contacts" size={20} color="#333" />
-                <Text style={styles.optionText}>Contacts</Text>
-              </View>
-              <MaterialIcons name="chevron-right" size={24} color="#ccc" />
-            </TouchableOpacity>
-
-            <View style={styles.divider} />
-
             <TouchableOpacity style={styles.optionItem} onPress={() => onNavigate('message')}>
               <View style={styles.optionLeft}>
                 <MaterialIcons name="support-agent" size={20} color="#333" />
@@ -228,21 +212,12 @@ const ProfileScreen = ({ onBack, onNavigate }: ProfileScreenProps) => {
               <MaterialIcons name="chevron-right" size={24} color="#ccc" />
             </TouchableOpacity>
 
-            <View style={styles.divider} />
-
-            <TouchableOpacity style={styles.optionItem} onPress={() => void handleThemeToggle()}>
-              <View style={styles.optionLeft}>
-                <MaterialIcons name={theme === 'dark' ? 'dark-mode' : 'light-mode'} size={20} color="#333" />
-                <Text style={styles.optionText}>{theme === 'dark' ? 'Dark mode' : 'Light mode'}</Text>
-              </View>
-              <MaterialIcons name="chevron-right" size={24} color="#ccc" />
-            </TouchableOpacity>
           </View>
 
           {/* More Section */}
           <Text style={styles.sectionTitle}>{t('more')}</Text>
           <View style={styles.optionsGroup}>
-            <TouchableOpacity style={styles.optionItem}>
+            <TouchableOpacity style={styles.optionItem} onPress={() => onNavigate('privacy')}>
               <View style={styles.optionLeft}>
                 <Ionicons name="shield-outline" size={20} color="#333" />
                 <Text style={styles.optionText}>{t('privacy_policy')}</Text>
@@ -252,7 +227,7 @@ const ProfileScreen = ({ onBack, onNavigate }: ProfileScreenProps) => {
             
             <View style={styles.divider} />
             
-            <TouchableOpacity style={styles.optionItem}>
+            <TouchableOpacity style={styles.optionItem} onPress={() => onNavigate('content-policy')}>
               <View style={styles.optionLeft}>
                 <MaterialIcons name="list-alt" size={20} color="#333" />
                 <Text style={styles.optionText}>{t('content_policy')}</Text>
@@ -262,7 +237,7 @@ const ProfileScreen = ({ onBack, onNavigate }: ProfileScreenProps) => {
 
             <View style={styles.divider} />
             
-            <TouchableOpacity style={styles.optionItem}>
+            <TouchableOpacity style={styles.optionItem} onPress={() => onNavigate('terms')}>
               <View style={styles.optionLeft}>
                 <MaterialIcons name="description" size={20} color="#333" />
                 <Text style={styles.optionText}>{t('terms_conditions')}</Text>

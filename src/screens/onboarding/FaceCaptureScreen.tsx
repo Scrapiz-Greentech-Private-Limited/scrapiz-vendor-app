@@ -1,14 +1,17 @@
+import * as ImageManipulator from 'expo-image-manipulator';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import React, { useEffect, useRef, useState } from 'react';
 import {
-  SafeAreaView,
+  ActivityIndicator,
+  Animated,
+  Pressable,
   StyleSheet,
   Text,
   TouchableOpacity,
   View,
 } from 'react-native';
-import ProgressSnackbar from '../../components/ProgressSnackbar';
-import SlideToConfirmButton from '../../components/ui/SlideToConfirmButton';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import Svg, { Defs, Mask, Rect, Ellipse, Circle } from 'react-native-svg';
 import { getReviewerSeedData, isVendorReviewMode } from '../../config/reviewMode';
 import { API_BASE_URL } from '../../config/api';
 import { AuthStorageService } from '../../services/authStorage';
@@ -22,162 +25,142 @@ type FaceCaptureScreenProps = {
   };
 };
 
-type ScreenPhase = 'intro' | 'camera' | 'verifying' | 'verified';
+const OVAL_W = 260;
+const OVAL_H = 320;
+const OVAL_CY_OFFSET = -30;
+const DASH_COUNT = 48;
 
 type CameraCaptureRef = {
   takePictureAsync: (options?: { quality?: number; skipProcessing?: boolean }) => Promise<{ uri: string }>;
 };
 
-const SCRAPIZ_GREEN = '#16a34a';
-const INTRO_GREEN = '#16a34a';
-const POSE_SEQUENCE = [
-  'Hold steady while we map your face',
-  'Turn your face slightly left',
-  'Tilt your head slightly right',
-  'Look up gently',
-  'Look down a little',
-  'Finalizing your Scrapiz identity',
-] as const;
+function ellipseDots(
+  cx: number,
+  cy: number,
+  rx: number,
+  ry: number,
+  count: number,
+): { x: number; y: number }[] {
+  return Array.from({ length: count }, (_, i) => {
+    const angle = (2 * Math.PI * i) / count - Math.PI / 2;
+    return {
+      x: cx + rx * Math.cos(angle),
+      y: cy + ry * Math.sin(angle),
+    };
+  });
+}
 
 export default function FaceCaptureScreen({ onBack, onNext, navigation }: FaceCaptureScreenProps) {
   const reviewModeEnabled = isVendorReviewMode();
   const reviewerSeed = getReviewerSeedData();
-  const [permission, requestPermission] = useCameraPermissions();
-  const [screenPhase, setScreenPhase] = useState<ScreenPhase>('intro');
-  const [isUploading, setIsUploading] = useState<boolean>(false);
-  const [progress, setProgress] = useState<number>(0);
-  const [label, setLabel] = useState<string>('');
-  const [error, setError] = useState<string | null>(null);
-  const [taskId, setTaskId] = useState<string | null>(null);
-  const [poseStepIndex, setPoseStepIndex] = useState<number>(0);
-  const [showContinueSlider, setShowContinueSlider] = useState<boolean>(false);
-  const [scanStarted, setScanStarted] = useState<boolean>(false);
 
+  const [phase, setPhase] = useState<
+    'intro' | 'capturing' | 'uploading' | 'verified' | 'failed'
+  >('intro');
+  const [error, setError] = useState<string | null>(null);
+  const [progress, setProgress] = useState(0);
+  const [taskId, setTaskId] = useState<string | null>(null);
+
+  const [permission, requestPermission] = useCameraPermissions();
+  const [cameraReady, setCameraReady] = useState(false);
+
+  const [screenW, setScreenW] = useState(375);
+  const [screenH, setScreenH] = useState(812);
+
+  const progressAnim = useRef(new Animated.Value(0)).current;
+  const hasStartedRef = useRef(false);
+  const captureStartedRef = useRef(false);
   const isMountedRef = useRef(true);
+  const permissionRequestedRef = useRef(false);
   const cameraRef = useRef<CameraCaptureRef | null>(null);
 
   useEffect(() => {
     isMountedRef.current = true;
-
+    if (!permissionRequestedRef.current && !permission?.granted) {
+      permissionRequestedRef.current = true;
+      void requestPermission();
+    }
     return () => {
       isMountedRef.current = false;
     };
   }, []);
 
   useEffect(() => {
-    if (screenPhase !== 'camera' && screenPhase !== 'verifying') {
-      return;
-    }
+    Animated.timing(progressAnim, {
+      toValue: progress,
+      duration: 400,
+      useNativeDriver: false,
+    }).start();
+  }, [progress]);
 
-    const intervalId = setInterval(() => {
-      setPoseStepIndex((current) => (current + 1) % POSE_SEQUENCE.length);
-    }, 1500);
+  const cx = screenW / 2;
+  const cy = screenH / 2 + OVAL_CY_OFFSET;
+  const rx = OVAL_W / 2;
+  const ry = OVAL_H / 2;
+  const dots = ellipseDots(cx, cy, rx, ry, DASH_COUNT);
 
-    return () => {
-      clearInterval(intervalId);
-    };
-  }, [screenPhase]);
-
-  useEffect(() => {
-    if (screenPhase !== 'camera' || !permission?.granted || scanStarted) {
-      return;
-    }
-
-    setScanStarted(true);
-    const timeoutId = setTimeout(() => {
-      void captureLiveFrame();
-    }, 2200);
-
-    return () => {
-      clearTimeout(timeoutId);
-    };
-  }, [permission?.granted, scanStarted, screenPhase]);
-
-  const handleVerificationComplete = () => {
-    if (!isMountedRef.current) {
-      return;
-    }
-
-    setIsUploading(false);
-    setScreenPhase('verified');
-    setShowContinueSlider(true);
+  const failVerification = (message: string) => {
+    if (!isMountedRef.current) return;
+    setPhase('failed');
+    setError(message);
   };
 
-  const startCameraFlow = async () => {
-    setError(null);
-    setTaskId(null);
-    setPoseStepIndex(0);
-    setShowContinueSlider(false);
-    setProgress(0);
-    setLabel('');
+  const handleVerified = async () => {
+    if (!isMountedRef.current) return;
+    setPhase('verified');
+    setProgress(100);
 
-    const granted = permission?.granted ? true : (await requestPermission()).granted;
-    if (!granted) {
-      setError('Camera permission is required to continue onboarding.');
+    await new Promise<void>((resolve) => setTimeout(resolve, 600));
+
+    if (!isMountedRef.current) return;
+
+    if (navigation) {
+      navigation.navigate('OnboardingStatus');
       return;
     }
-
-    setScanStarted(false);
-    setScreenPhase('camera');
+    if (onNext) {
+      onNext();
+    }
   };
 
-  const captureLiveFrame = async () => {
-    if (!cameraRef.current) {
-      if (isMountedRef.current) {
-        setError('Camera is not ready yet. Please try again.');
-        setScanStarted(false);
-      }
-      return;
-    }
-
+  const runCapture = async () => {
     try {
-      setScreenPhase('verifying');
-      const result = await cameraRef.current.takePictureAsync({
+      if (!cameraRef.current) {
+        failVerification('Camera not ready. Please try again.');
+        return;
+      }
+      const { uri: captured } = await cameraRef.current.takePictureAsync({
         quality: 0.85,
         skipProcessing: true,
       });
-      await handleUpload(result.uri);
-    } catch {
+      
       if (isMountedRef.current) {
-        setError('Please capture your face to continue');
-        setIsUploading(false);
-        setScreenPhase('camera');
-        setScanStarted(false);
+        setPhase('uploading');
+        setProgress(20);
+        setError(null);
       }
-    }
-  };
 
-  const handleUpload = async (uri: string) => {
-    const token = await AuthStorageService.getToken();
+      const compressed = await ImageManipulator.manipulateAsync(
+        captured,
+        [{ resize: { width: 640 } }],
+        { compress: 0.7, format: ImageManipulator.SaveFormat.JPEG },
+      );
+      
+      if (isMountedRef.current) setProgress(40);
 
-    if (!token) {
-      if (isMountedRef.current) {
-        setIsUploading(false);
-        setError('Authentication expired. Please sign in again.');
+      const token = await AuthStorageService.getToken();
+      if (!token) {
+        failVerification('Authentication expired. Please sign in again.');
+        return;
       }
-      return;
-    }
 
-    if (isMountedRef.current) {
-      setIsUploading(true);
-      setError(null);
-      setTaskId(null);
-      setProgress(0);
-      setLabel('');
-    }
-
-    try {
       await runFaceCaptureFlow({
-        uri,
+        uri: compressed.uri,
         token,
         baseUrl: API_BASE_URL,
         onStage: (stage) => {
-          if (!isMountedRef.current) {
-            return;
-          }
-
+          if (!isMountedRef.current) return;
           setProgress(stage.progress);
-          setLabel(stage.label);
         },
         onTaskId: (nextTaskId) => {
           if (isMountedRef.current) {
@@ -186,281 +169,306 @@ export default function FaceCaptureScreen({ onBack, onNext, navigation }: FaceCa
         },
         onRejected: async (message) => {
           if (isMountedRef.current) {
-            setIsUploading(false);
-            setError(message);
-            setTaskId(null);
-            setScreenPhase('camera');
-            setScanStarted(false);
+            failVerification(message);
           }
         },
         onFailure: async (message) => {
           if (isMountedRef.current) {
-            setIsUploading(false);
-            setError(message);
-            setScreenPhase('camera');
-            setScanStarted(false);
+            failVerification(message);
           }
         },
         onVerified: async () => {
-          handleVerificationComplete();
+          await handleVerified();
         },
       });
     } catch {
-      if (isMountedRef.current) {
-        setIsUploading(false);
-        setError('Upload failed. Please try again.');
-        setScreenPhase('camera');
-        setScanStarted(false);
-      }
+      failVerification('Face capture failed. Please try again.');
     }
   };
 
-  const handleContinue = () => {
-    if (navigation) {
-      navigation.navigate('OnboardingStatus');
-      return;
+  const startVerification = async () => {
+    if (hasStartedRef.current) return;
+    if (!permission?.granted) {
+      if (!permissionRequestedRef.current) permissionRequestedRef.current = true;
+      const result = await requestPermission();
+      if (!result.granted) {
+        setError('Camera access is required for face verification.');
+        return;
+      }
     }
+    hasStartedRef.current = true;
+    captureStartedRef.current = false;
+    setPhase('capturing');
+    setError(null);
+  };
 
-    onNext?.();
+  useEffect(() => {
+    if (phase !== 'intro') return;
+    if (hasStartedRef.current) return;
+    if (!permission?.granted) return;
+    hasStartedRef.current = true;
+    captureStartedRef.current = false;
+    setPhase('capturing');
+  }, [permission?.granted, phase]);
+
+  useEffect(() => {
+    if (phase !== 'capturing' || !cameraReady || captureStartedRef.current) return;
+    captureStartedRef.current = true;
+    void runCapture();
+  }, [phase, cameraReady]);
+
+  const retry = () => {
+    hasStartedRef.current = false;
+    captureStartedRef.current = false;
+    setPhase('intro');
+    setError(null);
+    setProgress(0);
+    setTaskId(null);
   };
 
   const handleReviewModeComplete = () => {
     setTaskId(`review-face-${Date.now()}`);
-    setLabel(`Reviewer face profile ready for ${reviewerSeed.name}`);
     setError(null);
-    handleVerificationComplete();
+    void handleVerified();
   };
 
-  if (screenPhase === 'intro') {
-    return (
-      <SafeAreaView style={styles.introSafeArea}>
-        <View style={styles.introContainer}>
-          {onBack ? (
-            <TouchableOpacity onPress={onBack} style={styles.introBackButton}>
-              <Text style={styles.introBackText}>Back</Text>
-            </TouchableOpacity>
-          ) : null}
+  const uploadLabel =
+    progress < 30 ? 'Setting up your identity...'
+    : progress < 70 ? 'Building your profile...'
+    : progress < 100 ? 'Almost ready...'
+    : 'Identity registered. Welcome to Scrapiz!';
 
-          <View style={styles.introHero}>
-            <View style={styles.brandBadge}>
-              <Text style={styles.brandBadgeText}>S</Text>
-            </View>
-            <Text style={styles.introEyebrow}>Let&apos;s start onboarding</Text>
-            <Text style={styles.introTitle}>Welcome To Scrapiz Family</Text>
-            <Text style={styles.introBody}>
-              We are setting up your Scrapiz partner identity with a warm, secure face verification journey.
-            </Text>
-          </View>
+  const ovalTop = cy - ry;
+  const ovalLeft = cx - rx;
+  const ovalRight = cx + rx;
+  const ovalBottom = cy + ry;
+  const bracketInset = 8;
 
-          <TouchableOpacity
-            style={styles.getStartedButton}
-            onPress={() => {
-              void startCameraFlow();
-            }}
-          >
-            <Text style={styles.getStartedButtonText}>Get Started</Text>
-          </TouchableOpacity>
-          {reviewModeEnabled ? (
-            <TouchableOpacity style={styles.reviewButton} onPress={handleReviewModeComplete}>
-              <Text style={styles.reviewButtonText}>Use reviewer sample</Text>
-            </TouchableOpacity>
-          ) : null}
-        </View>
-      </SafeAreaView>
-    );
-  }
+  const CornerBracket = ({ top, left, rotate }: { top: number; left: number; rotate?: string }) => (
+    <View
+      style={[styles.cornerBracket, { top, left }, rotate ? { transform: [{ rotate }] } : undefined]}
+    >
+      <View style={styles.bracketH} />
+      <View style={styles.bracketV} />
+    </View>
+  );
 
   return (
-    <SafeAreaView style={styles.safeArea}>
-      <View style={styles.background}>
-        {permission?.granted ? (
-          <CameraView
-            ref={(ref) => {
-              cameraRef.current = ref as CameraCaptureRef | null;
-            }}
-            style={StyleSheet.absoluteFillObject}
-            facing="front"
-            mute={true}
+    <SafeAreaView
+      style={styles.safe}
+      onLayout={(e) => {
+        setScreenW(e.nativeEvent.layout.width);
+        setScreenH(e.nativeEvent.layout.height);
+      }}
+    >
+      <CameraView
+        ref={(ref) => { cameraRef.current = ref as unknown as CameraCaptureRef; }}
+        style={StyleSheet.absoluteFillObject}
+        facing="front"
+        mute
+        onCameraReady={() => setCameraReady(true)}
+        onMountError={(event) => {
+          setCameraReady(false);
+          failVerification(event?.message ?? 'Camera could not be started. Please check camera permission.');
+        }}
+      />
+
+      <Svg style={StyleSheet.absoluteFillObject} width={screenW} height={screenH} pointerEvents="none">
+        <Defs>
+          <Mask id="ovalMask" x="0" y="0" width={screenW} height={screenH}>
+            <Rect x="0" y="0" width={screenW} height={screenH} fill="white" />
+            <Ellipse cx={cx} cy={cy} rx={rx} ry={ry} fill="black" />
+          </Mask>
+        </Defs>
+        <Rect x="0" y="0" width={screenW} height={screenH} fill="rgba(10,20,10,0.72)" mask="url(#ovalMask)" />
+        {dots.map((dot, i) => (
+          <Circle
+            key={i}
+            cx={dot.x}
+            cy={dot.y}
+            r={i % 2 === 0 ? 2.8 : 1.6}
+            fill={i % 2 === 0 ? '#FFFFFF' : 'rgba(255,255,255,0.45)'}
           />
-        ) : (
-          <View style={styles.cameraFallback} />
-        )}
+        ))}
+      </Svg>
 
-        <View style={styles.cameraFallbackOverlay} />
-        <View style={styles.overlay}>
-          <View style={styles.header}>
-            {onBack ? (
-              <TouchableOpacity onPress={onBack} style={styles.backButton}>
-                <Text style={styles.backButtonText}>Back</Text>
-              </TouchableOpacity>
-            ) : (
-              <View />
-            )}
+      <TouchableOpacity style={styles.backBtn} onPress={onBack} accessibilityLabel="Go back">
+        <Text style={styles.backBtnText}>{'<'}</Text>
+      </TouchableOpacity>
 
-            <Text style={styles.headerTag}>Scrapiz Face Setup</Text>
-          </View>
-
-          <View style={styles.topCopyWrap}>
-            <Text style={styles.topTitle}>
-              {screenPhase === 'verified'
-                ? 'Identity confirmed'
-                : 'Please put your phone in front of your face'}
-            </Text>
-            <Text style={styles.topSubtitle}>
-              {screenPhase === 'verified'
-                ? 'Your face profile has been verified and stored securely.'
-                : POSE_SEQUENCE[poseStepIndex]}
-            </Text>
-          </View>
-
-          <View style={styles.faceFrameWrap}>
-            <View style={styles.faceFrameOuter}>
-              <View style={styles.faceFrameInner}>
-                <View
-                  style={[
-                    styles.verticalFill,
-                    {
-                      height: `${Math.max(progress, screenPhase === 'verified' ? 100 : 8)}%`,
-                    },
-                  ]}
-                />
-                <View style={styles.meshWrap}>
-                  <View style={styles.meshLineOne} />
-                  <View style={styles.meshLineTwo} />
-                  <View style={styles.meshLineThree} />
-                  <View style={styles.meshLineFour} />
-                  <View style={styles.meshLineFive} />
-                  <View style={styles.meshPointA} />
-                  <View style={styles.meshPointB} />
-                  <View style={styles.meshPointC} />
-                  <View style={styles.meshPointD} />
-                  <View style={styles.meshPointE} />
-                  <View style={styles.meshPointF} />
-                  <View style={styles.meshPointG} />
-                  <View style={styles.meshPointH} />
-                </View>
-              </View>
-            </View>
-          </View>
-
-          <View style={styles.bottomPanel}>
-            <Text style={styles.progressValue}>
-              {screenPhase === 'verified' ? '100%' : `${Math.max(progress, 6)}%`}
-            </Text>
-            <Text style={styles.progressLabel}>
-              {screenPhase === 'verified' ? 'Your Scrapiz identity is ready.' : label || 'Preparing your capture...'}
-            </Text>
-
-            {taskId ? <Text style={styles.taskIdText}>Verification ID: {taskId}</Text> : null}
-            {error ? <Text style={styles.errorText}>{error}</Text> : null}
-
-            {showContinueSlider ? (
-              <View style={styles.sliderWrap}>
-                <SlideToConfirmButton
-                  label="Slide to Continue"
-                  onConfirm={handleContinue}
-                />
-              </View>
-            ) : null}
-
-            {!isUploading && (screenPhase === 'camera' || screenPhase === 'verifying') ? (
-              <TouchableOpacity
-                style={styles.retakeButton}
-                onPress={() => {
-                  void startCameraFlow();
-                }}
-              >
-                <Text style={styles.retakeButtonText}>Restart Face Scan</Text>
-              </TouchableOpacity>
-            ) : null}
-          </View>
+      <TouchableOpacity style={styles.closeBtn} onPress={onBack} accessibilityLabel="Close">
+        <View style={styles.closeBtnInner}>
+          <Text style={styles.closeBtnText}>{'x'}</Text>
         </View>
+      </TouchableOpacity>
 
-        <ProgressSnackbar
-          visible={isUploading}
-          progress={progress}
-          label={label}
-          themeColor={SCRAPIZ_GREEN}
-        />
+      <View style={styles.headingWrap}>
+        <Text style={styles.heading}>Position your face within the frame</Text>
+        <Text style={styles.subheading}>Setting up your Scrapiz identity</Text>
+      </View>
+
+      <CornerBracket top={ovalTop - bracketInset} left={ovalLeft - bracketInset} />
+      <CornerBracket top={ovalTop - bracketInset} left={ovalRight - 28 + bracketInset} rotate="90deg" />
+      <CornerBracket top={ovalBottom - 28 + bracketInset} left={ovalLeft - bracketInset} rotate="-90deg" />
+      <CornerBracket top={ovalBottom - 28 + bracketInset} left={ovalRight - 28 + bracketInset} rotate="180deg" />
+
+      <View style={styles.bottomPanel}>
+        {phase === 'verified' && (
+          <View style={styles.progressWrap}>
+            <Text style={styles.progressPercent}>{String.fromCharCode(10003)}</Text>
+            <Text style={styles.progressLabel}>Face registered successfully!</Text>
+            <Text style={styles.progressHint}>Your Scrapiz partner identity is now set up. Proceeding to next step...</Text>
+          </View>
+        )}
+        {phase === 'uploading' && (
+          <View style={styles.progressWrap}>
+            <Text style={styles.progressPercent}>{progress}%</Text>
+            <Text style={styles.progressLabel}>{uploadLabel}</Text>
+            <View style={styles.progressTrack}>
+              <Animated.View
+                style={[styles.progressFill, { width: progressAnim.interpolate({ inputRange: [0, 100], outputRange: ['0%', '100%'] }) }]}
+              />
+            </View>
+            <Text style={styles.progressHint}>
+              Please hold still while we register your face. This creates your secure identity for future pickups.
+            </Text>
+            {taskId && <Text style={styles.taskIdText}>Registration ID: {taskId}</Text>}
+          </View>
+        )}
+        {phase === 'capturing' && (
+          <View style={styles.progressWrap}>
+            <Text style={styles.progressLabel}>{cameraReady ? 'Hold still...' : 'Starting camera...'}</Text>
+            <Text style={styles.progressHint}>Keep your face centred. Capture starts automatically.</Text>
+          </View>
+        )}
+        {phase === 'failed' && error && (
+          <View style={styles.errorWrap}>
+            <Text style={styles.errorTitle}>Registration failed</Text>
+            <Text style={styles.errorMsg}>{error}</Text>
+            <Pressable style={styles.retryBtn} onPress={retry}>
+              <Text style={styles.retryBtnText}>Try Again</Text>
+            </Pressable>
+          </View>
+        )}
+        {phase === 'intro' && (
+          <>
+            <View style={styles.notice}>
+              <View style={styles.noticeDot} />
+              <Text style={styles.noticeText}>
+                Make sure you are in a well-lit area. This photo will be used to verify your identity during pickups.
+              </Text>
+            </View>
+            {error ? <Text style={styles.introError}>{error}</Text> : null}
+            <Pressable style={styles.startBtn} onPress={() => void startVerification()}>
+              <Text style={styles.startBtnText}>Register My Face</Text>
+            </Pressable>
+            {reviewModeEnabled && (
+              <Pressable style={styles.reviewBtn} onPress={handleReviewModeComplete}>
+                <Text style={styles.reviewBtnText}>Use reviewer sample</Text>
+              </Pressable>
+            )}
+          </>
+        )}
       </View>
     </SafeAreaView>
   );
 }
 
+const BRACKET_SIZE = 28;
+const BRACKET_THICKNESS = 3;
+const GREEN = '#16A34A';
+const GREEN_LIGHT = '#22C55E';
+
 const styles = StyleSheet.create({
-  introSafeArea: {
-    flex: 1,
-    backgroundColor: INTRO_GREEN,
+  safe: { flex: 1, backgroundColor: '#000' },
+
+  backBtn: {
+    position: 'absolute', top: 52, left: 16,
+    width: 40, height: 40,
+    alignItems: 'center', justifyContent: 'center',
+    zIndex: 10,
   },
-  introContainer: {
-    flex: 1,
-    backgroundColor: INTRO_GREEN,
-    paddingHorizontal: 20,
-    paddingTop: 18,
-    paddingBottom: 18,
-  },
-  introBackButton: {
-    alignSelf: 'flex-start',
-    paddingVertical: 8,
-    paddingHorizontal: 2,
-  },
-  introBackText: {
-    color: '#ffffff',
-    fontSize: 15,
-    fontWeight: '700',
-  },
-  introHero: {
-    flex: 1,
-    justifyContent: 'center',
-  },
-  brandBadge: {
-    width: 72,
-    height: 72,
-    borderRadius: 20,
+  backBtnText: { color: '#fff', fontSize: 32, lineHeight: 34 },
+
+  closeBtn: { position: 'absolute', top: 52, right: 16, zIndex: 10 },
+  closeBtnInner: {
+    width: 32, height: 32, borderRadius: 16,
     backgroundColor: 'rgba(255,255,255,0.18)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 30,
+    alignItems: 'center', justifyContent: 'center',
   },
-  brandBadgeText: {
-    color: '#ffffff',
-    fontSize: 36,
-    fontWeight: '900',
+  closeBtnText: { color: '#fff', fontSize: 13, fontWeight: '700' },
+
+  headingWrap: {
+    position: 'absolute', top: 100, left: 0, right: 0,
+    alignItems: 'center', zIndex: 10, paddingHorizontal: 32,
   },
-  introEyebrow: {
-    color: 'rgba(255,255,255,0.92)',
-    fontSize: 22,
-    fontWeight: '800',
-    marginBottom: 12,
+  heading: { color: '#ffffff', fontSize: 17, fontWeight: '700', textAlign: 'center', letterSpacing: 0.2 },
+  subheading: { color: 'rgba(255,255,255,0.75)', fontSize: 14, fontWeight: '600', textAlign: 'center', marginTop: 6 },
+
+  cornerBracket: { position: 'absolute', width: BRACKET_SIZE, height: BRACKET_SIZE, zIndex: 10 },
+  bracketH: {
+    position: 'absolute', top: 0, left: 0,
+    width: BRACKET_SIZE, height: BRACKET_THICKNESS,
+    backgroundColor: GREEN_LIGHT, borderRadius: 2,
   },
-  introTitle: {
-    color: '#ffffff',
-    fontSize: 56,
-    lineHeight: 60,
-    fontWeight: '900',
-    letterSpacing: -1.6,
-    maxWidth: 300,
+  bracketV: {
+    position: 'absolute', top: 0, left: 0,
+    width: BRACKET_THICKNESS, height: BRACKET_SIZE,
+    backgroundColor: GREEN_LIGHT, borderRadius: 2,
   },
-  introBody: {
-    marginTop: 20,
-    color: 'rgba(255,255,255,0.88)',
-    fontSize: 19,
-    lineHeight: 28,
-    maxWidth: 320,
+
+  bottomPanel: {
+    position: 'absolute', bottom: 0, left: 0, right: 0,
+    paddingHorizontal: 24, paddingBottom: 40, paddingTop: 20,
+    backgroundColor: 'rgba(255,255,255,0.97)',
+    borderTopLeftRadius: 28, borderTopRightRadius: 28,
+    zIndex: 10,
   },
-  getStartedButton: {
-    height: 58,
-    borderRadius: 18,
-    backgroundColor: '#ffffff',
-    alignItems: 'center',
-    justifyContent: 'center',
+
+  progressWrap: { alignItems: 'center', paddingVertical: 4 },
+  progressPercent: { fontSize: 36, fontWeight: '800', color: GREEN, letterSpacing: -0.5 },
+  progressLabel: { fontSize: 16, fontWeight: '600', color: '#111', marginTop: 4, textAlign: 'center' },
+  progressTrack: {
+    width: '100%', height: 6,
+    backgroundColor: '#E5E7EB', borderRadius: 3, marginTop: 14, overflow: 'hidden',
   },
-  getStartedButtonText: {
-    color: '#111827',
-    fontSize: 18,
-    fontWeight: '800',
+  progressFill: { height: 6, backgroundColor: GREEN, borderRadius: 3 },
+  progressHint: { marginTop: 12, fontSize: 12, color: '#6B7280', textAlign: 'center', lineHeight: 17 },
+  taskIdText: {
+    marginTop: 8,
+    color: 'rgba(0,0,0,0.48)',
+    fontSize: 11,
+    textAlign: 'center',
   },
-  reviewButton: {
+
+  errorWrap: { alignItems: 'center', paddingVertical: 4 },
+  errorTitle: { fontSize: 18, fontWeight: '700', color: '#111' },
+  errorMsg: { fontSize: 14, color: '#EF4444', textAlign: 'center', marginTop: 8, lineHeight: 20 },
+  retryBtn: {
+    marginTop: 16, width: '100%', height: 52, borderRadius: 26,
+    backgroundColor: GREEN, alignItems: 'center', justifyContent: 'center',
+  },
+  retryBtnText: { color: '#fff', fontSize: 15, fontWeight: '700' },
+
+  notice: {
+    flexDirection: 'row', alignItems: 'flex-start',
+    backgroundColor: '#FFF8E8', borderRadius: 12, padding: 12, marginBottom: 16,
+  },
+  noticeDot: {
+    width: 8, height: 8, borderRadius: 4,
+    backgroundColor: '#B7791F', marginTop: 3, marginRight: 10, flexShrink: 0,
+  },
+  noticeText: { flex: 1, fontSize: 12, color: '#7C5A1A', lineHeight: 17 },
+  introError: { fontSize: 13, color: '#EF4444', textAlign: 'center', marginBottom: 12 },
+  startBtn: {
+    height: 54, borderRadius: 27,
+    backgroundColor: GREEN, alignItems: 'center', justifyContent: 'center',
+    shadowColor: GREEN, shadowOpacity: 0.35, shadowRadius: 14,
+    shadowOffset: { width: 0, height: 6 }, elevation: 6,
+  },
+  startBtnText: { color: '#fff', fontSize: 16, fontWeight: '800', letterSpacing: 0.2 },
+  
+  reviewBtn: {
     marginTop: 14,
     paddingVertical: 12,
     paddingHorizontal: 18,
@@ -468,283 +476,11 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#86efac',
     backgroundColor: '#f0fdf4',
+    alignItems: 'center',
   },
-  reviewButtonText: {
+  reviewBtnText: {
     color: '#166534',
     fontSize: 14,
-    fontWeight: '700',
-  },
-  safeArea: {
-    flex: 1,
-    backgroundColor: '#05070d',
-  },
-  background: {
-    flex: 1,
-    backgroundColor: '#05070d',
-  },
-  cameraFallback: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: '#0f172a',
-  },
-  cameraFallbackOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(2,6,23,0.34)',
-  },
-  overlay: {
-    flex: 1,
-    paddingHorizontal: 20,
-    paddingTop: 18,
-    paddingBottom: 34,
-  },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  backButton: {
-    paddingVertical: 8,
-    paddingHorizontal: 2,
-  },
-  backButtonText: {
-    color: '#ffffff',
-    fontSize: 15,
-    fontWeight: '700',
-  },
-  headerTag: {
-    color: 'rgba(255,255,255,0.78)',
-    fontSize: 13,
-    fontWeight: '700',
-    letterSpacing: 0.5,
-  },
-  topCopyWrap: {
-    marginTop: 22,
-    alignItems: 'center',
-  },
-  topTitle: {
-    color: '#ffffff',
-    fontSize: 27,
-    lineHeight: 33,
-    fontWeight: '800',
-    textAlign: 'center',
-    maxWidth: 320,
-  },
-  topSubtitle: {
-    marginTop: 10,
-    color: 'rgba(255,255,255,0.84)',
-    fontSize: 16,
-    lineHeight: 23,
-    textAlign: 'center',
-    maxWidth: 300,
-  },
-  faceFrameWrap: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  faceFrameOuter: {
-    width: 274,
-    height: 344,
-    borderRadius: 170,
-    borderWidth: 12,
-    borderColor: '#57e59a',
-    backgroundColor: 'rgba(87,229,154,0.15)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    overflow: 'hidden',
-    shadowColor: '#57e59a',
-    shadowOpacity: 0.28,
-    shadowOffset: { width: 0, height: 12 },
-    shadowRadius: 24,
-  },
-  faceFrameInner: {
-    width: 248,
-    height: 316,
-    borderRadius: 158,
-    overflow: 'hidden',
-    borderWidth: 3,
-    borderColor: 'rgba(255,255,255,0.18)',
-    backgroundColor: 'rgba(15,23,42,0.16)',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  verticalFill: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    top: 0,
-    backgroundColor: 'rgba(34,197,94,0.26)',
-  },
-  meshWrap: {
-    width: 176,
-    height: 210,
-    position: 'relative',
-  },
-  meshLineOne: {
-    position: 'absolute',
-    top: 16,
-    left: 28,
-    width: 120,
-    height: 1,
-    backgroundColor: 'rgba(255,255,255,0.78)',
-    transform: [{ rotate: '18deg' }],
-  },
-  meshLineTwo: {
-    position: 'absolute',
-    top: 54,
-    left: 16,
-    width: 145,
-    height: 1,
-    backgroundColor: 'rgba(255,255,255,0.72)',
-    transform: [{ rotate: '-20deg' }],
-  },
-  meshLineThree: {
-    position: 'absolute',
-    top: 96,
-    left: 18,
-    width: 136,
-    height: 1,
-    backgroundColor: 'rgba(255,255,255,0.65)',
-    transform: [{ rotate: '12deg' }],
-  },
-  meshLineFour: {
-    position: 'absolute',
-    top: 144,
-    left: 24,
-    width: 118,
-    height: 1,
-    backgroundColor: 'rgba(255,255,255,0.7)',
-    transform: [{ rotate: '-16deg' }],
-  },
-  meshLineFive: {
-    position: 'absolute',
-    top: 38,
-    left: 82,
-    width: 1,
-    height: 126,
-    backgroundColor: 'rgba(255,255,255,0.62)',
-  },
-  meshPointA: {
-    position: 'absolute',
-    top: 14,
-    left: 24,
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: '#ffffff',
-  },
-  meshPointB: {
-    position: 'absolute',
-    top: 12,
-    right: 24,
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: '#ffffff',
-  },
-  meshPointC: {
-    position: 'absolute',
-    top: 58,
-    left: 12,
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: '#ffffff',
-  },
-  meshPointD: {
-    position: 'absolute',
-    top: 60,
-    right: 10,
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: '#ffffff',
-  },
-  meshPointE: {
-    position: 'absolute',
-    top: 98,
-    left: 28,
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: '#ffffff',
-  },
-  meshPointF: {
-    position: 'absolute',
-    top: 100,
-    right: 28,
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: '#ffffff',
-  },
-  meshPointG: {
-    position: 'absolute',
-    bottom: 44,
-    left: 74,
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: '#ffffff',
-  },
-  meshPointH: {
-    position: 'absolute',
-    bottom: 16,
-    left: 84,
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: '#ffffff',
-  },
-  bottomPanel: {
-    alignItems: 'center',
-  },
-  progressValue: {
-    color: '#4ade80',
-    fontSize: 54,
-    lineHeight: 58,
-    fontWeight: '900',
-  },
-  progressLabel: {
-    marginTop: 8,
-    color: '#ffffff',
-    fontSize: 18,
-    lineHeight: 24,
-    fontWeight: '600',
-    textAlign: 'center',
-    maxWidth: 320,
-  },
-  taskIdText: {
-    marginTop: 8,
-    color: 'rgba(255,255,255,0.68)',
-    fontSize: 12,
-    textAlign: 'center',
-  },
-  errorText: {
-    marginTop: 10,
-    color: '#fca5a5',
-    fontSize: 14,
-    lineHeight: 20,
-    textAlign: 'center',
-  },
-  sliderWrap: {
-    width: '100%',
-    marginTop: 22,
-  },
-  retakeButton: {
-    marginTop: 18,
-    minWidth: 190,
-    height: 48,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.24)',
-    backgroundColor: 'rgba(15,23,42,0.44)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 20,
-  },
-  retakeButtonText: {
-    color: '#ffffff',
-    fontSize: 15,
     fontWeight: '700',
   },
 });

@@ -1,4 +1,5 @@
 import * as ImageManipulator from 'expo-image-manipulator';
+import { FRONTEND_KEY } from '../../services/api';
 
 export const STAGES = [
   { progress: 10, label: 'Setting up your partner profile...' },
@@ -101,10 +102,11 @@ export async function runFaceCaptureFlow({
 
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
-  const uploadResponse = await fetchImpl(`${baseUrl}/api/vendor/upload-face/`, {
+  const uploadResponse = await fetchImpl(`${baseUrl}/vendor/upload-face/`, {
     method: 'POST',
     headers: {
-      Authorization: `Token ${token}`,
+      'x-auth-app': FRONTEND_KEY,
+      Authorization: `Bearer ${token}`,
     },
     body: formData,
     signal: controller.signal,
@@ -137,10 +139,11 @@ export async function runFaceCaptureFlow({
   while (Date.now() - pollStartedAt < maxPollMs) {
     await sleepImpl(pollIntervalMs);
 
-    const statusResponse = await fetchImpl(`${baseUrl}/api/vendor/face-status/`, {
+    const statusResponse = await fetchImpl(`${baseUrl}/vendor/face-status/`, {
       method: 'GET',
       headers: {
-        Authorization: `Token ${token}`,
+        'x-auth-app': FRONTEND_KEY,
+        Authorization: `Bearer ${token}`,
       },
     });
     const statusBody = await parseJsonSafely<PollResponse>(statusResponse);

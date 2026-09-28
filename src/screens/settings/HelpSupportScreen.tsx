@@ -45,13 +45,6 @@ const HelpSupportScreen = ({ onBack }: HelpSupportScreenProps) => {
       action: () => handleWhatsApp(),
       color: '#1B7332',
     },
-    {
-      title: 'Report Issue',
-      subtitle: 'Report a technical problem',
-      icon: 'bug-report',
-      action: () => handleReportIssue(),
-      color: '#1B7332',
-    },
   ];
 
   const handleCall = async () => {
@@ -85,55 +78,8 @@ const HelpSupportScreen = ({ onBack }: HelpSupportScreenProps) => {
     }
   };
 
-
-
-  const handleReportIssue = () => {
-    Alert.alert(
-      'Report Issue',
-      'Please describe the issue you are facing and we will get back to you soon.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        { 
-          text: 'Send Report', 
-          onPress: () => {
-            // In a real app, this would send the report to a server
-            Alert.alert('Success', 'Issue reported successfully! We will contact you within 24 hours.');
-          }
-        }
-      ]
-    );
-  };
-
-  const handleWebsite = async () => {
-    const websiteUrl = 'https://scrapiz.com';
-    try {
-      const supported = await Linking.canOpenURL(websiteUrl);
-      if (supported) {
-        await Linking.openURL(websiteUrl);
-      } else {
-        Alert.alert('Error', 'Unable to open website');
-      }
-    } catch {
-      Alert.alert('Error', 'Unable to open website');
-    }
-  };
-
-  const handleForum = async () => {
-    const forumUrl = 'https://community.scrapiz.com';
-    try {
-      const supported = await Linking.canOpenURL(forumUrl);
-      if (supported) {
-        await Linking.openURL(forumUrl);
-      } else {
-        Alert.alert('Error', 'Unable to open community forum');
-      }
-    } catch {
-      Alert.alert('Error', 'Unable to open community forum');
-    }
-  };
-
   const handleEmergencyCall = async () => {
-    const emergencyNumber = '+919000911911';
+    const emergencyNumber = '+918828700630';
     try {
       const supported = await Linking.canOpenURL(`tel:${emergencyNumber}`);
       if (supported) {
@@ -240,7 +186,7 @@ const HelpSupportScreen = ({ onBack }: HelpSupportScreenProps) => {
               <View style={styles.emergencyText}>
                 <Text style={styles.emergencyTitle}>24/7 Emergency Support</Text>
                 <Text style={styles.emergencySubtitle}>For urgent issues or emergencies</Text>
-                <Text style={styles.emergencyNumber}>+91-9000-911-911</Text>
+                <Text style={styles.emergencyNumber}>+91 8828700630</Text>
               </View>
               <TouchableOpacity
                 style={styles.emergencyButton}
@@ -253,35 +199,6 @@ const HelpSupportScreen = ({ onBack }: HelpSupportScreenProps) => {
             </View>
           </View>
 
-          {/* App Info */}
-          <View style={styles.section}>
-            <View style={styles.appInfoCard}>
-              <Text style={styles.appInfoTitle}>Need more help?</Text>
-              <Text style={styles.appInfoText}>
-                Visit our website or check our community forum for more detailed guides and tutorials.
-              </Text>
-              <View style={styles.appInfoButtons}>
-                <TouchableOpacity 
-                  style={styles.websiteButton}
-                  onPress={handleWebsite}
-                  accessibilityLabel="Visit Scrapiz website"
-                  accessibilityRole="button"
-                >
-                  <MaterialIcons name="language" size={20} color="#1B7332" />
-                  <Text style={styles.websiteButtonText}>Visit Website</Text>
-                </TouchableOpacity>
-                <TouchableOpacity 
-                  style={styles.forumButton}
-                  onPress={handleForum}
-                  accessibilityLabel="Visit community forum"
-                  accessibilityRole="button"
-                >
-                  <MaterialIcons name="forum" size={20} color="#1B7332" />
-                  <Text style={styles.forumButtonText}>Community Forum</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-          </View>
         </View>
       </ScrollView>
     </View>

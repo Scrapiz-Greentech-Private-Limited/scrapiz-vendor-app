@@ -2,8 +2,8 @@ import React, { useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
-  FlatList,
   Image,
+  ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -125,18 +125,18 @@ const PickupAssessmentScreen: React.FC<PickupAssessmentScreenProps> = ({
         <Text style={styles.infoBannerText}>Pick only what you can collect today.</Text>
       </View>
 
-      <FlatList
-        data={items}
-        keyExtractor={(item) => String(item.product_id)}
+      <ScrollView
         contentContainerStyle={styles.listContent}
         showsVerticalScrollIndicator={false}
-        renderItem={({ item }) => {
+      >
+        {items.map((item) => {
           const checked = selectedIds.has(String(item.product_id));
           const showFallbackVisuals = Boolean(item.is_fallback);
           const showBackendImage = Boolean(item.image_url);
 
           return (
             <TouchableOpacity
+              key={String(item.product_id)}
               style={[styles.itemCard, !checked && styles.itemCardUnchecked]}
               onPress={() => toggleSelection(item.product_id)}
               activeOpacity={0.9}
@@ -184,8 +184,7 @@ const PickupAssessmentScreen: React.FC<PickupAssessmentScreenProps> = ({
               </View>
             </TouchableOpacity>
           );
-        }}
-      />
+        })}
 
       <View style={[styles.bottomWrap, items.length <= 1 && styles.bottomWrapCompact]}>
         <View style={styles.calculationCard}>
@@ -253,6 +252,7 @@ const PickupAssessmentScreen: React.FC<PickupAssessmentScreenProps> = ({
           )}
         </TouchableOpacity>
       </View>
+      </ScrollView>
     </View>
     </SafeAreaView>
   );
@@ -292,7 +292,7 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   infoBannerText: { color: '#14532D', flex: 1, lineHeight: 20, fontWeight: '600' },
-  listContent: { paddingHorizontal: 18, paddingTop: 16, paddingBottom: 250, gap: 14 },
+  listContent: { paddingHorizontal: 18, paddingTop: 16, paddingBottom: 28, gap: 14 },
   itemCard: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -398,20 +398,16 @@ const styles = StyleSheet.create({
     borderColor: '#16A34A',
   },
   bottomWrap: {
-    position: 'absolute',
-    left: 16,
-    right: 16,
-    bottom: 16,
+    marginTop: 2,
+    marginBottom: 8,
     borderRadius: 24,
     backgroundColor: '#FFFFFF',
     padding: 12,
-    maxHeight: '58%',
     borderWidth: 1,
     borderColor: '#E5ECE7',
   },
   bottomWrapCompact: {
-    bottom: 48,
-    maxHeight: '64%',
+    marginBottom: 24,
   },
   summaryCard: {
     borderRadius: 20,

@@ -60,6 +60,7 @@ type PartnerHomeContentProps = {
   onOpenRating?: () => void;
   onOpenMenu?: () => void;
   liveBookings?: ReactNode;
+  activeJobBanner?: ReactNode;
 };
 
 const PERIODS: { key: HomePeriod; label: string }[] = [
@@ -73,28 +74,40 @@ const LEADERBOARD = [
     place: '1st',
     medal: 'Gold',
     name: 'Rohan S.',
-    color: HOME.gold,
-    ink: HOME.goldInk,
-    avatar: 'https://randomuser.me/api/portraits/men/32.jpg',
-    icon: 'emoji-events' as const,
+    weight: '340 kg',
+    revenue: '₹14,200',
+    avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100&auto=format&fit=crop&q=80',
+    color: '#FEF3C7',
+    border: '#F59E0B',
+    ink: '#92400E',
+    crown: '#D97706',
+    highlight: true,
   },
   {
     place: '2nd',
     medal: 'Silver',
-    name: 'Priya M.',
-    color: HOME.silver,
-    ink: HOME.silverInk,
-    avatar: 'https://randomuser.me/api/portraits/women/44.jpg',
-    icon: 'emoji-events' as const,
+    name: 'Amit P.',
+    weight: '280 kg',
+    revenue: '₹11,500',
+    avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=100&auto=format&fit=crop&q=80',
+    color: '#E2E8F0',
+    border: '#94A3B8',
+    ink: '#334155',
+    crown: '#64748B',
+    highlight: false,
   },
   {
     place: '3rd',
     medal: 'Bronze',
-    name: 'Amit K.',
-    color: HOME.bronze,
-    ink: HOME.bronzeInk,
-    avatar: 'https://randomuser.me/api/portraits/men/76.jpg',
-    icon: 'emoji-events' as const,
+    name: 'Priya M.',
+    weight: '210 kg',
+    revenue: '₹9,800',
+    avatar: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=100&auto=format&fit=crop&q=80',
+    color: '#FFEDD5',
+    border: '#FB923C',
+    ink: '#9A3412',
+    crown: '#EA580C',
+    highlight: false,
   },
 ];
 
@@ -128,6 +141,7 @@ export default function PartnerHomeContent({
   onOpenRating,
   onOpenMenu,
   liveBookings,
+  activeJobBanner,
 }: PartnerHomeContentProps) {
   const [bannerIndex, setBannerIndex] = useState(0);
   const [statusOpen, setStatusOpen] = useState(false);
@@ -273,20 +287,16 @@ export default function PartnerHomeContent({
               key={item.place}
               style={[
                 styles.leaderCard,
-                { backgroundColor: item.color },
+                {
+                  backgroundColor: item.color,
+                  borderColor: item.border,
+                  borderWidth: 1.5,
+                },
               ]}
             >
-              {/* Soft decorative highlight */}
-              <View
-                style={[
-                  styles.leaderGlow,
-                  { backgroundColor: item.ink },
-                ]}
-              />
-
               {/* Crown */}
               <View style={styles.crownWrap}>
-                <Text style={[styles.crown, { color: item.ink }]}>♛</Text>
+                <Text style={[styles.crown, { color: item.crown }]}>♛</Text>
               </View>
 
               {/* Partner information */}
@@ -296,7 +306,7 @@ export default function PartnerHomeContent({
                   style={styles.leaderAvatar}
                 />
                 <Text
-                  style={styles.leaderName}
+                  style={[styles.leaderName, { color: item.ink }]}
                   numberOfLines={2}
                   ellipsizeMode="tail"
                 >
@@ -345,6 +355,8 @@ export default function PartnerHomeContent({
           <Text style={styles.duration}>{featured.duration}</Text>
         </View>
       </TouchableOpacity>
+
+      {activeJobBanner ? activeJobBanner : null}
 
       {isOnline ? (
         liveBookings
@@ -664,16 +676,6 @@ leaderBoard: {
       height: 6,
     },
     elevation: 2,
-  },
-
-  leaderGlow: {
-    position: 'absolute',
-    width: 76,
-    height: 76,
-    borderRadius: 38,
-    right: -30,
-    top: -28,
-    opacity: 0.07,
   },
 
   /* Crown gets its own top-center breathing room */

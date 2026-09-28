@@ -20,6 +20,8 @@ export interface User {
   rejectionReason?: string | null;
   profileImageMissing?: boolean;
   requiresProfileImageUpload?: boolean;
+  requiresFaceReverification?: boolean;
+  faceReverificationMessage?: string | null;
 }
 
 export interface BookingRequest {
@@ -136,6 +138,15 @@ export interface BookingActiveResponse {
   started_at?: string;
   arrived_at?: string;
   contact_unlocked?: boolean;
+  // Arrival attempt status — set by the server once the vendor has triggered
+  // the face-verify + OTP flow.  The client uses this to resume mid-flow
+  // across app restarts without re-running face verification.
+  arrival_attempt?: {
+    status: 'pending' | 'otp_sent' | 'verified' | 'rejected' | string;
+    face_outcome?: 'verified' | 'flagged' | 'rejected' | string | null;
+    otp_sent_at?: string | null;
+    otp_expires_at?: string | null;
+  } | null;
   quote?: {
     status: string;
     payment_method?: 'cash' | 'upi' | null;
@@ -185,10 +196,18 @@ export interface DutySession {
   vehicle_type?: string | null;
   start_lat: number;
   start_lng: number;
+  route_points?: DutySessionMapPoint[];
   status: 'live' | 'offline' | string;
   vehicle?: DutySessionVehicle | null;
   booking_summary?: DutySessionBookingSummary;
   bookings?: DutySessionBooking[];
+}
+
+export interface DutySessionMapPoint {
+  latitude: number;
+  longitude: number;
+  label?: string;
+  kind?: 'start' | 'pickup' | string;
 }
 
 export interface DutySessionVehicle {
@@ -266,6 +285,8 @@ export interface DutySessionBooking {
   completed_at?: string | null;
   updated_at?: string | null;
   total_payout?: number | null;
+  pickup_latitude?: number | null;
+  pickup_longitude?: number | null;
   customer?: {
     id?: string | number | null;
     name?: string | null;
@@ -279,6 +300,25 @@ export interface DutySessionBooking {
   collected_materials?: DutySessionMaterial[];
   quote?: DutySessionQuote | null;
   bill?: DutySessionBill | null;
+  payment?: DutySessionPayment | null;
+  vendor_review?: DutySessionVendorReview | null;
+}
+
+export interface DutySessionPayment {
+  status?: string | null;
+  method?: string | null;
+  utr_reference?: string | null;
+  submitted_at?: string | null;
+  customer_confirmed_at?: string | null;
+  amount?: number | null;
+}
+
+export interface DutySessionVendorReview {
+  rating: number;
+  recommendation?: boolean;
+  review_text?: string | null;
+  summary_title?: string | null;
+  submitted_at?: string | null;
 }
 
 export interface ScrapItem {

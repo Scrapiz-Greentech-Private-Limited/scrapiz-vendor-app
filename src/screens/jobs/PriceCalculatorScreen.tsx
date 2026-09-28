@@ -17,7 +17,14 @@ interface PriceCalculatorScreenProps {
   bookingId: string;
   selectedItems: SelectedPickupItem[];
   onBack: () => void;
-  onQuoteSubmitted: (totalPayout: number, bookingId: string) => void;
+  /**
+   * Called when the vendor submits the quote.
+   * @param totalPayout  - server-confirmed total
+   * @param bookingId    - booking UUID
+   * @param paymentMethod - vendor’s chosen payout method
+   * @param fallbackAllowed - whether cash fallback was offered
+   */
+  onQuoteSubmitted: (totalPayout: number, bookingId: string, paymentMethod: 'upi' | 'cash', fallbackAllowed: boolean) => void;
   onShowToast: (message: string, type: 'success' | 'error' | 'info') => void;
 }
 
@@ -41,6 +48,10 @@ const PriceCalculatorScreen: React.FC<PriceCalculatorScreenProps> = ({
     selectedItems.map((item) => ({ ...item, key: String(item.product_id), actual_weight_kg: item.actual_weight_kg || 0 })),
   );
   const [isSubmitting, setIsSubmitting] = useState(false);
+  /** Vendor’s payout preference — UPI by default */
+  const [preferredPaymentMethod, setPreferredPaymentMethod] = useState<'upi' | 'cash'>('upi');
+  /** Whether to offer cash as a fallback if UPI fails */
+  const [cashFallbackEnabled, setCashFallbackEnabled] = useState(true);
 
   const itemSubtotals = useMemo(
     () =>
@@ -68,7 +79,7 @@ const PriceCalculatorScreen: React.FC<PriceCalculatorScreenProps> = ({
     setItems((prev) => prev.filter((item) => item.key !== key));
   };
 
-  const handleSubmitQuote = async () => {
+    const handleSubmitQuote = async () => {
     if (grandTotal <= 0 || isSubmitting) {
       return;
     }
@@ -91,8 +102,10 @@ const PriceCalculatorScreen: React.FC<PriceCalculatorScreenProps> = ({
     try {
       await ApiService.submitBookingQuote(bookingId, {
         items: quoteItems,
+        preferred_payment_method: preferredPaymentMethod,
+        fallback_payment_method: preferredPaymentMethod === 'upi' && cashFallbackEnabled ? 'cash' : 'none',
       });
-      onQuoteSubmitted(grandTotal, bookingId);
+      onQuoteSubmitted(grandTotal, bookingId, preferredPaymentMethod, preferredPaymentMethod === 'upi' && cashFallbackEnabled);
     } catch (error: any) {
       onShowToast(error?.message || 'Failed to submit quote', 'error');
     } finally {
@@ -171,7 +184,7 @@ const PriceCalculatorScreen: React.FC<PriceCalculatorScreenProps> = ({
         })}
       </ScrollView>
 
-      <View style={styles.footerWrap}>
+            <View style={styles.footerWrap}>
         <View style={styles.totalBar}>
           <View style={styles.totalIcon}>
             <MaterialIcons name="currency-rupee" size={18} color="#14532D" />
@@ -181,6 +194,42 @@ const PriceCalculatorScreen: React.FC<PriceCalculatorScreenProps> = ({
             <Text style={styles.totalSub}>Payable to customer</Text>
           </View>
           <Text style={styles.totalAmount}>{formatCurrency(grandTotal)}</Text>
+        </View>
+
+        {/* Payment method selector */}
+        <View style={styles.paymentMethodSection}>
+          <Text style={styles.paymentMethodLabel}>How will you pay customer?</Text>
+          <View style={styles.paymentMethodRow}>
+            <TouchableOpacity
+              style={[styles.paymentMethodChip, preferredPaymentMethod === 'upi' && styles.paymentMethodChipActive]}
+              onPress={() => setPreferredPaymentMethod('upi')}
+            >
+              <MaterialIcons name="qr-code-2" size={16} color={preferredPaymentMethod === 'upi' ? '#fff' : '#475569'} />
+              <Text style={[styles.paymentMethodChipText, preferredPaymentMethod === 'upi' && styles.paymentMethodChipTextActive]}>UPI</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.paymentMethodChip, preferredPaymentMethod === 'cash' && styles.paymentMethodChipActive]}
+              onPress={() => {
+                setPreferredPaymentMethod('cash');
+                setCashFallbackEnabled(false);
+              }}
+            >
+              <MaterialIcons name="payments" size={16} color={preferredPaymentMethod === 'cash' ? '#fff' : '#475569'} />
+              <Text style={[styles.paymentMethodChipText, preferredPaymentMethod === 'cash' && styles.paymentMethodChipTextActive]}>Cash</Text>
+            </TouchableOpacity>
+          </View>
+          {preferredPaymentMethod === 'upi' && (
+            <TouchableOpacity
+              style={styles.fallbackToggleRow}
+              onPress={() => setCashFallbackEnabled((prev) => !prev)}
+              activeOpacity={0.7}
+            >
+              <View style={[styles.checkboxSmall, cashFallbackEnabled && styles.checkboxSmallChecked]}>
+                {cashFallbackEnabled && <MaterialIcons name="check" size={12} color="#fff" />}
+              </View>
+              <Text style={styles.fallbackToggleText}>Offer cash as fallback if UPI fails</Text>
+            </TouchableOpacity>
+          )}
         </View>
 
         <TouchableOpacity
@@ -246,7 +295,7 @@ const styles = StyleSheet.create({
   totalTitle: { color: '#fff', fontWeight: '800' },
   totalSub: { color: 'rgba(255,255,255,0.85)', fontSize: 12, marginTop: 2 },
   totalAmount: { color: '#fff', fontWeight: '800', fontSize: 20 },
-  finalizeBtn: { height: 50, borderRadius: 12, backgroundColor: '#14532D', alignItems: 'center', justifyContent: 'center', marginTop: 10 },
+    finalizeBtn: { height: 50, borderRadius: 12, backgroundColor: '#14532D', alignItems: 'center', justifyContent: 'center', marginTop: 10 },
   finalizeText: { color: '#fff', fontWeight: '800', fontSize: 16 },
   disabled: { opacity: 0.5 },
   emptyWrap: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: '#F8FAFC', paddingHorizontal: 24 },
@@ -254,6 +303,25 @@ const styles = StyleSheet.create({
   backAction: { marginTop: 14, backgroundColor: '#14532D', paddingHorizontal: 18, paddingVertical: 10, borderRadius: 10 },
   backActionText: { color: '#fff', fontWeight: '700' },
   flex1: { flex: 1 },
+  // ── Payment method selection ────────────────────────────────────────────────
+  paymentMethodSection: { marginTop: 10 },
+  paymentMethodLabel: { fontSize: 11, fontWeight: '700', color: '#64748B', letterSpacing: 0.5, marginBottom: 6, textTransform: 'uppercase' },
+  paymentMethodRow: { flexDirection: 'row', gap: 8 },
+  paymentMethodChip: {
+    flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5,
+    paddingVertical: 8, borderRadius: 10, borderWidth: 1.5, borderColor: '#CBD5E1',
+    backgroundColor: '#F8FAFC',
+  },
+  paymentMethodChipActive: { backgroundColor: '#14532D', borderColor: '#14532D' },
+  paymentMethodChipText: { fontWeight: '700', fontSize: 13, color: '#475569' },
+  paymentMethodChipTextActive: { color: '#fff' },
+  fallbackToggleRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 8 },
+  checkboxSmall: {
+    width: 18, height: 18, borderRadius: 4, borderWidth: 1.5, borderColor: '#94A3B8',
+    alignItems: 'center', justifyContent: 'center',
+  },
+  checkboxSmallChecked: { backgroundColor: '#14532D', borderColor: '#14532D' },
+  fallbackToggleText: { fontSize: 12, color: '#64748B', fontWeight: '600' },
 });
 
 export default PriceCalculatorScreen;

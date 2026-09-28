@@ -28,6 +28,16 @@ import { buildFallbackBookings, isFallbackAppTestingEnabled } from '../jobs/fall
 import { BookingRequest } from '../../types';
 import { useLanguage } from '../../utils/i18n';
 import { useAppTheme } from '../../theme/appTheme';
+import { useBooking } from '../../context/BookingContext';
+
+const STEP_LABELS: Record<string, { label: string; icon: keyof typeof MaterialIcons.glyphMap; color: string; stepNumber: number }> = {
+  en_route: { label: 'Head to Pickup Location', icon: 'directions-car', color: '#16A34A', stepNumber: 1 },
+  arrived_pre_otp: { label: 'OTP Pending — Customer Verification', icon: 'sms', color: '#F59E0B', stepNumber: 2 },
+  arrived_post_otp: { label: 'Arrival Confirmed — Start Weighing', icon: 'inventory-2', color: '#16A34A', stepNumber: 2 },
+  in_progress: { label: 'Weighing in Progress', icon: 'scale', color: '#16A34A', stepNumber: 3 },
+  ready: { label: 'Ready — Send Price Quote', icon: 'receipt-long', color: '#FF9800', stepNumber: 4 },
+  payment_pending: { label: 'Awaiting Payment', icon: 'payments', color: '#7C3AED', stepNumber: 4 },
+};
 
 interface DashboardProps {
   onBookingSelect: (booking: BookingRequest) => void;
@@ -37,15 +47,25 @@ interface DashboardProps {
   hasActiveBooking?: boolean;
   onOpenActiveBooking?: () => void;
   onCompleteOnboarding?: () => void;
+  onStartFaceVerification?: () => void;
 }
 
 const LEAD_POLL_INTERVAL_MS = 10000;
 
-export default function Dashboard({ onBookingSelect, onNavigate, onShowToast, hasActiveBooking = false, onOpenActiveBooking, onCompleteOnboarding }: DashboardProps) {
+export default function Dashboard({
+  onBookingSelect,
+  onNavigate,
+  onShowToast,
+  hasActiveBooking = false,
+  onOpenActiveBooking,
+  onCompleteOnboarding,
+  onStartFaceVerification,
+}: DashboardProps) {
   const { user, setOnlineStatus } = useAuth();
   const { t } = useLanguage();
   const { palette } = useAppTheme();
   const posthog = usePostHog();
+  const { activeBooking: contextBooking, bookingStep: contextStep, otpVerified } = useBooking();
   const [isOnline, setIsOnline] = useState(user?.isOnline || false);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isToggling, setIsToggling] = useState(false);
@@ -56,7 +76,7 @@ export default function Dashboard({ onBookingSelect, onNavigate, onShowToast, ha
   const [homeMetrics, setHomeMetrics] = useState<PartnerHomeMetrics>({
     leadsHandled: 0,
     revenueGenerated: 0,
-    partnerRating: Number(user?.performanceRating || 0),
+    partnerRating: 0,
   });
   const [fadeAnim] = useState(new Animated.Value(0));
   const [slideAnim] = useState(new Animated.Value(30));
@@ -69,17 +89,8 @@ export default function Dashboard({ onBookingSelect, onNavigate, onShowToast, ha
   const menuItems = useMemo(
     () => [
       { key: 'home', label: 'Home', icon: 'home', action: () => onNavigate('home') },
-        {
-          key: 'theme',
-          label: 'Light mode',
-          icon: 'light-mode',
-          action: () => {
-            onShowToast('Light mode is always on.', 'info');
-          },
-        },
       { key: 'subscription', label: 'Subscriptions', icon: 'star', action: () => onNavigate('subscription') },
       { key: 'credit', label: 'Add to Wallet', icon: 'account-balance-wallet', action: () => onNavigate('credit') },
-      { key: 'contacts', label: 'Contacts', icon: 'contacts', action: () => onNavigate('contacts') },
       { key: 'bills', label: 'Bills', icon: 'receipt', action: () => onNavigate('bills') },
       { key: 'personal-info', label: 'Personal Information', icon: 'person', action: () => onNavigate('personal-info') },
     ],
@@ -182,7 +193,7 @@ export default function Dashboard({ onBookingSelect, onNavigate, onShowToast, ha
       setHomeMetrics({
         leadsHandled,
         revenueGenerated,
-        partnerRating: Number(profile?.performance_rating ?? user?.performanceRating ?? 0),
+        partnerRating: Number(profile?.performance_rating ?? 0),
       });
     } catch (error) {
       console.warn('Failed to load partner home metrics', error);
@@ -395,7 +406,39 @@ export default function Dashboard({ onBookingSelect, onNavigate, onShowToast, ha
         }
         showsVerticalScrollIndicator={false}
       >
-          {needsOnboarding && !isOnline && (
+        {user?.requiresFaceReverification ? (
+          <View style={styles.complianceNoticeCard}>
+            <View style={styles.complianceNoticeHeader}>
+              <View style={styles.complianceNoticeIconWrap}>
+                <MaterialIcons name="security" size={22} color="#047857" />
+              </View>
+              <View style={{ flex: 1 }}>
+                <View style={styles.complianceNoticeTagRow}>
+                  <Text style={styles.complianceNoticeTag}>Compliance Notice</Text>
+                  <View style={styles.complianceNoticePill}>
+                    <Text style={styles.complianceNoticeStatus}>Action Required</Text>
+                  </View>
+                </View>
+                <Text style={styles.complianceNoticeTitle}>Identity Re-Verification Requested</Text>
+                <Text style={styles.complianceNoticeBody}>
+                  {user.faceReverificationMessage ||
+                    'We apologize for the inconvenience. Please upload a fresh face photo to complete identity verification.'}
+                </Text>
+              </View>
+            </View>
+
+            <TouchableOpacity
+              onPress={onStartFaceVerification || onCompleteOnboarding}
+              style={styles.complianceNoticeButton}
+              activeOpacity={0.88}
+            >
+              <MaterialIcons name="camera-alt" size={18} color="#ffffff" />
+              <Text style={styles.complianceNoticeButtonText}>Complete Face Verification Now</Text>
+            </TouchableOpacity>
+          </View>
+        ) : null}
+
+        {Boolean(needsOnboarding && !isOnline) ? (
             <View className="mx-5 mb-4 rounded-[24px] p-5 bg-gradient-to-br from-[#FEF3C7] to-[#FDE68A] border-2 border-[#F59E0B]">
               <View className="flex-row items-start mb-3">
                 <View className="w-12 h-12 rounded-full bg-[#F59E0B] justify-center items-center mr-3">
@@ -432,7 +475,7 @@ export default function Dashboard({ onBookingSelect, onNavigate, onShowToast, ha
                 <Text className="text-white font-bold text-[15px] ml-2">Upload Documents Now</Text>
               </TouchableOpacity>
             </View>
-          )}
+          ) : null}
 
         <PartnerHomeContent
           vendorName={user?.name || 'Partner'}
@@ -451,27 +494,65 @@ export default function Dashboard({ onBookingSelect, onNavigate, onShowToast, ha
           onOpenRevenue={() => onNavigate('earnings')}
           onOpenRating={() => onNavigate('ratings-hub')}
           onOpenMenu={openMenu}
+          activeJobBanner={
+            (hasActiveBooking || Boolean(contextBooking)) ? (() => {
+              const rawStep = contextStep || 'en_route';
+              const resumeStepKey = rawStep === 'arrived'
+                ? (otpVerified ? 'arrived_post_otp' : 'arrived_pre_otp')
+                : rawStep;
+              const resumeMeta = STEP_LABELS[resumeStepKey] || STEP_LABELS.en_route;
+              const rawId = contextBooking?.order_number || contextBooking?.booking_id || '';
+              const truncatedBookingId = rawId.length > 8 ? `${rawId.slice(0, 8)}...` : (rawId || 'Active');
+
+              return (
+                <TouchableOpacity
+                  onPress={() => {
+                    if (user?.requiresFaceReverification) {
+                      onStartFaceVerification?.();
+                      return;
+                    }
+                    onOpenActiveBooking?.();
+                  }}
+                  activeOpacity={0.9}
+                  style={styles.resumeCard}
+                >
+                  <View style={styles.resumeCardHeader}>
+                    <View style={styles.resumeIconBadge}>
+                      <MaterialIcons name={resumeMeta.icon} size={18} color={resumeMeta.color} />
+                    </View>
+                    <Text style={styles.resumeBookingId} numberOfLines={1} ellipsizeMode="tail">
+                      Booking #{truncatedBookingId}
+                    </Text>
+                    <View style={styles.resumeBtnOutline}>
+                      <Text style={styles.resumeBtnText}>Resume →</Text>
+                    </View>
+                  </View>
+
+                  <Text style={styles.resumeStepTitle} numberOfLines={1} ellipsizeMode="tail">
+                    {resumeMeta.label}
+                  </Text>
+
+                  {/* Mini 4-step progress bar */}
+                  <View style={styles.resumeProgressRow}>
+                    <View style={styles.resumeProgressBg}>
+                      <View
+                        style={[
+                          styles.resumeProgressFill,
+                          { width: `${(resumeMeta.stepNumber / 4) * 100}%` },
+                        ]}
+                      />
+                    </View>
+                    <Text style={styles.resumeProgressText}>
+                      {resumeMeta.stepNumber} of 4
+                    </Text>
+                  </View>
+                </TouchableOpacity>
+              );
+            })() : null
+          }
           liveBookings={isOnline ? (
 
             <Animated.View style={{ opacity: fadeAnim }} className="flex-1 mb-6">
-              {hasActiveBooking && (
-                <View className="mb-4 rounded-3xl border border-[#CFE7D6] bg-[#F3FBF5] p-4">
-                  <View className="flex-row items-center justify-between">
-                    <View className="flex-1 pr-3">
-                      <Text className="text-[16px] font-extrabold text-[#14532D]">Current ongoing pickup</Text>
-                      <Text className="mt-1 text-[13px] text-[#166534]">
-                        Resume your active order to continue arrival verification, weighing, and quote submission.
-                      </Text>
-                    </View>
-                    <TouchableOpacity
-                      onPress={onOpenActiveBooking}
-                      className="rounded-xl bg-[#1B7332] px-4 py-2"
-                    >
-                      <Text className="text-[12px] font-bold text-white">Resume</Text>
-                    </TouchableOpacity>
-                  </View>
-                </View>
-              )}
 
               <View className="flex-row justify-between items-center mb-4 px-1">
                 <View className="flex-row items-center">
@@ -703,5 +784,159 @@ const styles = StyleSheet.create({
   },
   drawerHeaderSpacer: {
     width: 36,
+  },
+  complianceNoticeCard: {
+    marginHorizontal: 20,
+    marginBottom: 16,
+    borderRadius: 22,
+    padding: 18,
+    backgroundColor: '#ffffff',
+    borderWidth: 1.5,
+    borderColor: '#059669',
+    shadowColor: '#059669',
+    shadowOpacity: 0.12,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 4,
+  },
+  complianceNoticeHeader: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+  },
+  complianceNoticeIconWrap: {
+    width: 42,
+    height: 42,
+    borderRadius: 14,
+    backgroundColor: '#ecfdf5',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
+  },
+  complianceNoticeTagRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 4,
+  },
+  complianceNoticeTag: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#047857',
+    letterSpacing: 0.6,
+    textTransform: 'uppercase',
+  },
+  complianceNoticePill: {
+    backgroundColor: '#fef2f2',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 6,
+  },
+  complianceNoticeStatus: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#b91c1c',
+    textTransform: 'uppercase',
+  },
+  complianceNoticeTitle: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: '#0f172a',
+    marginBottom: 4,
+  },
+  complianceNoticeBody: {
+    fontSize: 13,
+    lineHeight: 19,
+    color: '#475569',
+  },
+  complianceNoticeButton: {
+    marginTop: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#059669',
+    borderRadius: 14,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    gap: 8,
+  },
+  complianceNoticeButtonText: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#ffffff',
+  },
+  resumeCard: {
+    marginHorizontal: 20,
+    marginBottom: 16,
+    borderRadius: 24,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    backgroundColor: '#FFFFFF',
+    padding: 16,
+    shadowColor: '#14532D',
+    shadowOpacity: 0.06,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 3 },
+    elevation: 3,
+  },
+  resumeCardHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  resumeIconBadge: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#DCFCE7',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 8,
+  },
+  resumeBookingId: {
+    flex: 1,
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#64748B',
+  },
+  resumeBtnOutline: {
+    borderWidth: 1,
+    borderColor: '#16A34A',
+    borderRadius: 12,
+    paddingVertical: 4,
+    paddingHorizontal: 12,
+    backgroundColor: 'transparent',
+  },
+  resumeBtnText: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: '#16A34A',
+  },
+  resumeStepTitle: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: '#0F172A',
+    marginBottom: 10,
+  },
+  resumeProgressRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  resumeProgressBg: {
+    flex: 1,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#E2E8F0',
+    overflow: 'hidden',
+  },
+  resumeProgressFill: {
+    height: '100%',
+    backgroundColor: '#16A34A',
+    borderRadius: 3,
+  },
+  resumeProgressText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#64748B',
   },
 });

@@ -248,14 +248,17 @@ export const buildFallbackBookings = async (): Promise<BookingRequest[]> => {
 
   await ensureFallbackCache();
 
+  const today = new Date();
+  const datePart = `${String(today.getMonth() + 1).padStart(2, '0')}${String(today.getDate()).padStart(2, '0')}${today.getFullYear()}`;
+
   return FALLBACK_BOOKING_IDS.map((bookingId, index) => {
     const items = FALLBACK_LEAD_CACHE.get(bookingId) || STATIC_EMERGENCY_ITEMS.slice(0, 5);
     const estimate = getFallbackEstimate(items);
     return {
       id: bookingId,
       ...FALLBACK_BOOKING_SHELL[index],
-      displayId: `SCPARTNER#${String(index + 1).padStart(3, '0')}`,
-      orderNumber: `SCPARTNER#${String(index + 1).padStart(3, '0')}`,
+      displayId: `SCR-${datePart}-${String(index + 1).padStart(4, '0')}`,
+      orderNumber: `SCR-${datePart}-${String(index + 1).padStart(4, '0')}`,
       scrapType: makeScrapTypeLabel(items),
       estimatedAmount: Math.round((estimate.estimated_value_min + estimate.estimated_value_max) / 2),
       estimatedWeight: `${items.reduce((sum, item) => sum + Number(item.quantity || 0), 0).toLocaleString('en-IN')} kg`,

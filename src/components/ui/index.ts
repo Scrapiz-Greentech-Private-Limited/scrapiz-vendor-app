@@ -7,3 +7,7 @@ export { ThemedView } from './themed-view';
 export { Collapsible } from './collapsible';
 export { IconSymbol } from './icon-symbol';
 export { default as SwipeToast } from './swipeToast';
+export { default as MessageInputBlock, MessageInputBlock as MessageInput } from './message-input-block';
+export * from './message-input-block';
+export { default as ScrollArea6 } from './scroll-area6';
+export * from './scroll-area6';

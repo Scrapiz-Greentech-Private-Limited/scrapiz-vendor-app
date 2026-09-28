@@ -15,6 +15,8 @@ import Mapbox from '@rnmapbox/maps';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ensureMapboxConfigured, MAPBOX_PUBLIC_TOKEN } from '../../config/mapbox';
+import * as Location from 'expo-location';
+import { vendorLocationStreamer } from '../../services/vendorLocationStreamer';
 import { VendorCoordinates } from '../../types';
 import SlideToConfirmButton from '../ui/SlideToConfirmButton';
 
@@ -24,6 +26,11 @@ ensureMapboxConfigured();
 const MAX_READY_DISTANCE_METERS = 300;
 const ROUTE_REFETCH_INTERVAL_MS = 45_000;
 const NAV_MAP_STYLE = 'mapbox://styles/mapbox/satellite-streets-v12';
+
+// GPS accuracy threshold: reject fixes whose reported accuracy radius exceeds
+// this value (meters). Coarse cell/wifi fixes on Android routinely report
+// 500–2000 m accuracy and are the source of the 39 km jump.
+const MAX_ACCEPTABLE_ACCURACY_METERS = 80;
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 interface CoordinatePoint {
@@ -137,55 +144,143 @@ export default function LiveTrackingGate({
   const [routeData, setRouteData] = useState<RouteData | null>(null);
   const [routeLoading, setRouteLoading] = useState(false);
   const [lastFetchedCoords, setLastFetchedCoords] = useState<CoordinatePoint | null>(null);
+  // Stable, accuracy-filtered coords.  We maintain our own GPS subscription
+  // inside this component so we never rely on a stale prop from a parent that
+  // might still be holding a coarse initial fix.
+  const [preciseCoords, setPreciseCoords] = useState<VendorCoordinates | null>(null);
+  // Track whether we have obtained at least one high-accuracy fix so we can
+  // suppress the inaccurate initial fix that arrives first on Android.
+  const preciseFixObtainedRef = useRef(false);
+  const locationWatchRef = useRef<Location.LocationSubscription | null>(null);
+
+  useEffect(() => {
+    if (!visible) {
+      // Clean up watcher when gate is hidden.
+      locationWatchRef.current?.remove();
+      locationWatchRef.current = null;
+      return;
+    }
+
+    let cancelled = false;
+
+    const isAccurate = (accuracy: number | null | undefined): boolean => {
+      if (accuracy == null) return false;
+      return accuracy <= MAX_ACCEPTABLE_ACCURACY_METERS;
+    };
+
+    const applyFix = (coords: VendorCoordinates) => {
+      if (cancelled) return;
+      const acc = coords.accuracy ?? null;
+      // If we already have a precise fix, only accept further fixes that are
+      // also precise — this blocks the occasional degraded reading.
+      if (preciseFixObtainedRef.current && !isAccurate(acc)) return;
+      if (isAccurate(acc)) preciseFixObtainedRef.current = true;
+      setPreciseCoords(coords);
+    };
+
+    const startWatch = async () => {
+      try {
+        const { status } = await Location.requestForegroundPermissionsAsync();
+        if (status !== 'granted' || cancelled) return;
+
+        // Kick off the continuous watcher with the highest accuracy.
+        // We deliberately do NOT call getCurrentPositionAsync first because on
+        // Android that call frequently returns the last-known coarse fix (the
+        // 39 km home-address reading) before the GPS chip has a satellite lock.
+        locationWatchRef.current = await Location.watchPositionAsync(
+          {
+            accuracy: Location.Accuracy.BestForNavigation,
+            distanceInterval: 3,  // update every 3 m of movement
+            timeInterval: 2000,
+          },
+          (position) => {
+            applyFix({
+              latitude: position.coords.latitude,
+              longitude: position.coords.longitude,
+              heading: position.coords.heading,
+              speed: position.coords.speed,
+              accuracy: position.coords.accuracy,
+              timestamp: position.timestamp,
+            });
+          },
+        );
+      } catch {
+        // Fall back to prop-supplied coords if watch fails.
+      }
+    };
+
+    void startWatch();
+
+    return () => {
+      cancelled = true;
+      locationWatchRef.current?.remove();
+      locationWatchRef.current = null;
+    };
+  }, [visible]);
+
+  // Effective coords priority:
+  //   1. Our own precise GPS fix (filtered to ≤80 m accuracy)
+  //   2. vendorCoords prop — only if it also passes the accuracy filter
+  //   3. streamer coords — same accuracy filter
+  // We never fall back to a coarse fix once a precise one has been obtained.
+  const streamerLatest = vendorLocationStreamer.getLatestCoords();
+
+  const effectiveCoords: VendorCoordinates | null = useMemo(() => {
+    const candidates = [
+      preciseCoords,
+      vendorCoords,
+      streamerLatest,
+    ];
+    // Return the first candidate that passes the accuracy filter.
+    // If none pass (GPS hasn't locked yet), return null — the UI
+    // will show '--' distances rather than a wildly wrong value.
+    for (const c of candidates) {
+      if (!c) continue;
+      const acc = (c as VendorCoordinates).accuracy ?? null;
+      if (acc !== null && acc <= MAX_ACCEPTABLE_ACCURACY_METERS) return c;
+    }
+    // No accurate fix available yet — return null so the UI shows loading.
+    return null;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [preciseCoords, vendorCoords]);
 
   // ── Live distance computation ───────────────────────────────────────────────
   const liveDistanceMeters = useMemo<number | null>(() => {
-    if (!vendorCoords) return null;
+    if (!effectiveCoords) return null;
 
-    const vLat = Number(vendorCoords.latitude);
-    const vLng = Number(vendorCoords.longitude);
+    const vLat = Number(effectiveCoords.latitude);
+    const vLng = Number(effectiveCoords.longitude);
 
     if (!Number.isFinite(vLat) || !Number.isFinite(vLng)) return null;
     if (!isCoordinateUsable(vLat, vLng)) return null;
     if (!isCoordinateUsable(pickupLocation.latitude, pickupLocation.longitude)) return null;
 
     const dist = haversineDistanceMeters({ latitude: vLat, longitude: vLng }, pickupLocation);
+    return Number.isFinite(dist) ? dist : null;
+  }, [effectiveCoords, pickupLocation]);
 
-    // Sanity-check against expected distance
-    const expectedMeters = Number(expectedDistanceKm) * 1000;
+  // displayVendorCoords is only non-null when we have an accurate GPS fix.
+  // Consumers must guard on null — do NOT fall back to a fabricated offset;
+  // that was the direct cause of the pin jumping to a random location.
+  const displayVendorCoords = useMemo<CoordinatePoint | null>(() => {
     if (
-      Number.isFinite(expectedMeters) &&
-      expectedMeters >= 0 &&
-      expectedMeters <= 5000 &&
-      dist > Math.max(5000, expectedMeters * 20)
-    ) {
-      return null;
-    }
-
-    return dist;
-  }, [vendorCoords, pickupLocation, expectedDistanceKm]);
-
-  const displayVendorCoords = useMemo<CoordinatePoint>(() => {
-    if (
-      vendorCoords &&
-      isCoordinateUsable(Number(vendorCoords.latitude), Number(vendorCoords.longitude))
+      effectiveCoords &&
+      isCoordinateUsable(Number(effectiveCoords.latitude), Number(effectiveCoords.longitude))
     ) {
       return {
-        latitude: Number(vendorCoords.latitude),
-        longitude: Number(vendorCoords.longitude),
+        latitude: Number(effectiveCoords.latitude),
+        longitude: Number(effectiveCoords.longitude),
       };
     }
-    return {
-      latitude: pickupLocation.latitude + 0.012,
-      longitude: pickupLocation.longitude - 0.012,
-    };
-  }, [pickupLocation, vendorCoords]);
+    return null;
+  }, [effectiveCoords]);
 
   const isSliderEnabled =
     liveDistanceMeters !== null && liveDistanceMeters <= MAX_READY_DISTANCE_METERS;
 
   // ── Fetch route from Mapbox Directions v5 ──────────────────────────────────
   const fetchRoute = useCallback(async () => {
+    if (!displayVendorCoords) return;
     const vLat = Number(displayVendorCoords.latitude);
     const vLng = Number(displayVendorCoords.longitude);
     if (!isCoordinateUsable(vLat, vLng)) return;
@@ -236,7 +331,7 @@ export default function LiveTrackingGate({
 
   // ── Camera follows vendor ─────────────────────────────────────────────────
   useEffect(() => {
-    if (!cameraRef.current) return;
+    if (!cameraRef.current || !displayVendorCoords) return;
     const vLat = Number(displayVendorCoords.latitude);
     const vLng = Number(displayVendorCoords.longitude);
     if (!Number.isFinite(vLat) || !Number.isFinite(vLng)) return;
@@ -249,9 +344,11 @@ export default function LiveTrackingGate({
       animationDuration: 800,
       animationMode: 'flyTo',
     });
-  }, [displayVendorCoords.latitude, displayVendorCoords.longitude, vendorCoords?.heading]);
+  }, [displayVendorCoords?.latitude, displayVendorCoords?.longitude, vendorCoords?.heading]);
 
   // ── Derived values ─────────────────────────────────────────────────────────
+  // When no accurate fix yet, centre the map on the destination so the vendor
+  // can see where they're going while GPS acquires a lock.
   const initialCoord = useMemo<[number, number]>(() => {
     if (
       displayVendorCoords &&
@@ -284,6 +381,7 @@ export default function LiveTrackingGate({
   // Fallback straight-line when route not yet loaded
   const fallbackGeoJson = useMemo(() => {
     if (routeGeoJson) return null;
+    if (!displayVendorCoords) return null;
     const vLat = Number(displayVendorCoords.latitude);
     const vLng = Number(displayVendorCoords.longitude);
     if (!isCoordinateUsable(vLat, vLng)) return null;
@@ -311,10 +409,12 @@ export default function LiveTrackingGate({
   );
 
   const openInMaps = useCallback(() => {
-    const origin = `${displayVendorCoords.latitude},${displayVendorCoords.longitude}`;
     const destination = `${pickupLocation.latitude},${pickupLocation.longitude}`;
+    const originPart = displayVendorCoords
+      ? `&origin=${displayVendorCoords.latitude},${displayVendorCoords.longitude}`
+      : '';
     Linking.openURL(
-      `https://www.google.com/maps/dir/?api=1&origin=${origin}&destination=${destination}&travelmode=driving`,
+      `https://www.google.com/maps/dir/?api=1${originPart}&destination=${destination}&travelmode=driving`,
     );
   }, [displayVendorCoords, pickupLocation]);
 
@@ -346,7 +446,8 @@ export default function LiveTrackingGate({
           heading={Number(vendorCoords?.heading || 0)}
         />
 
-        {vendorCoords ? <Mapbox.UserLocation visible animated /> : null}
+        {/* Show native blue dot only when we have a filtered accurate fix */}
+        {displayVendorCoords ? <Mapbox.UserLocation visible animated /> : null}
 
         {/* Route casing */}
         {activeLineGeoJson ? (
@@ -380,15 +481,17 @@ export default function LiveTrackingGate({
           </Mapbox.ShapeSource>
         ) : null}
 
-        <Mapbox.PointAnnotation
-          id="vendor-pin"
-          coordinate={[displayVendorCoords.longitude, displayVendorCoords.latitude]}
-          anchor={{ x: 0.5, y: 0.5 }}
-        >
-          <View style={[styles.nativePin, styles.vendorPin]}>
-            <View style={[styles.nativePinInner, styles.vendorPinInner]} />
-          </View>
-        </Mapbox.PointAnnotation>
+        {displayVendorCoords ? (
+          <Mapbox.PointAnnotation
+            id="vendor-pin"
+            coordinate={[displayVendorCoords.longitude, displayVendorCoords.latitude]}
+            anchor={{ x: 0.5, y: 0.5 }}
+          >
+            <View style={[styles.nativePin, styles.vendorPin]}>
+              <View style={[styles.nativePinInner, styles.vendorPinInner]} />
+            </View>
+          </Mapbox.PointAnnotation>
+        ) : null}
 
         <Mapbox.PointAnnotation id="destination-pin" coordinate={destinationCoord} anchor={{ x: 0.5, y: 0.5 }}>
           <View style={[styles.nativePin, styles.customerPin]}>
@@ -549,7 +652,9 @@ export default function LiveTrackingGate({
             <Text style={styles.routeReadyText}>
               {liveDistanceMeters !== null
                 ? `${formatDistance(liveDistanceMeters)} away — move closer to unlock`
-                : 'Route ready. Move closer to unlock arrival.'}
+                : displayVendorCoords
+                  ? 'Route ready. Move closer to unlock arrival.'
+                  : 'Acquiring GPS signal… please wait'}
             </Text>
           </View>
         )}

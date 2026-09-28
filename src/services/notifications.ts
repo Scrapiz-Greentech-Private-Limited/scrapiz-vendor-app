@@ -95,14 +95,13 @@ export async function registerVendorPushToken(): Promise<string | null> {
     projectId: getProjectId(),
   });
   const token = tokenData.data;
-  const existingToken = await AuthStorageService.getPushToken();
 
-  if (existingToken === token) {
-    return token;
+  try {
+    await ApiService.registerPushToken(token, Device.deviceName || `${Platform.OS} vendor device`, 'vendor');
+    await AuthStorageService.setPushToken(token);
+  } catch (error) {
+    console.warn('Failed to register vendor push token with backend:', error);
   }
-
-  await ApiService.registerPushToken(token, Device.deviceName || `${Platform.OS} vendor device`);
-  await AuthStorageService.setPushToken(token);
 
   return token;
 }
@@ -119,7 +118,7 @@ export async function unregisterVendorPushToken(token?: string): Promise<void> {
 
 export function handleVendorNotificationNavigation(
   data: VendorNotificationData | undefined,
-  navigate: (target: string) => void,
+  navigate: (target: string, extraData?: any) => void,
 ): void {
   if (!data?.type) {
     navigate('home');
@@ -127,29 +126,39 @@ export function handleVendorNotificationNavigation(
   }
 
   switch (data.type) {
+    case 'face_reupload_request':
+      navigate('face_reverification', data);
+      return;
     case 'screen':
-      navigate(data.value || 'home');
+      navigate(data.value || 'home', data);
       return;
     case 'lead_detail':
-      navigate('home');
+      navigate('home', data);
       return;
     case 'booking_detail':
-      navigate('ongoing');
+      navigate('ongoing', data);
       return;
     case 'order_update':
     case 'order_quote':
-      navigate('ongoing');
+      navigate('ongoing', data);
       return;
     case 'url':
       return;
     default:
-      navigate('home');
+      navigate('home', data);
   }
 }
 
 export function setupVendorNotificationListeners(
-  navigate: (target: string) => void,
+  navigate: (target: string, extraData?: any) => void,
 ): () => void {
+  const receivedSubscription = Notifications.addNotificationReceivedListener((notification) => {
+    const data = notification.request.content.data as VendorNotificationData | undefined;
+    if (data?.type === 'face_reupload_request') {
+      navigate('face_reverification', data);
+    }
+  });
+
   const responseSubscription = Notifications.addNotificationResponseReceivedListener((response) => {
     handleVendorNotificationNavigation(
       response.notification.request.content.data as VendorNotificationData | undefined,
@@ -171,6 +180,7 @@ export function setupVendorNotificationListeners(
   });
 
   return () => {
+    receivedSubscription.remove();
     responseSubscription.remove();
     notifeeUnsubscribe();
   };

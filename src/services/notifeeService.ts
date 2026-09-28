@@ -18,7 +18,7 @@ export const NOTIFICATION_CHANNELS = {
 } as const;
 
 export interface VendorNotificationData {
-  type?: 'screen' | 'url' | 'lead_detail' | 'booking_detail' | 'order_update' | 'order_quote';
+  type?: 'screen' | 'url' | 'lead_detail' | 'booking_detail' | 'order_update' | 'order_quote' | 'face_reupload_request';
   value?: string;
   leadId?: string;
   bookingId?: string;
@@ -27,6 +27,9 @@ export interface VendorNotificationData {
   category?: string;
   image?: string;
   largeIcon?: string;
+  title?: string;
+  message?: string;
+  action?: string;
 }
 
 export async function initializeNotificationChannels(): Promise<void> {

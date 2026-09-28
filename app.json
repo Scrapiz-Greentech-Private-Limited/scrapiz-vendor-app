@@ -20,7 +20,7 @@
         "FOREGROUND_SERVICE_LOCATION"
       ],
       "adaptiveIcon": {
-        "foregroundImage": "./assets/images/image_splashScreen_green.jpg",
+        "foregroundImage": "./assets/images/android_icon.png",
         "backgroundColor": "#16a34a"
       },
       "config": {

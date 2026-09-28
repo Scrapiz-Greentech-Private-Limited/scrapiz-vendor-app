@@ -350,16 +350,6 @@ const translations: Translations = {
     hindi: 'कबाड़ की दरें',
     marathi: 'भंगार दर',
   },
-  contacts: {
-    english: 'Contacts',
-    hindi: 'संपर्क',
-    marathi: 'संपर्क',
-  },
-  customer_contacts: {
-    english: 'Customer contacts',
-    hindi: 'ग्राहक संपर्क',
-    marathi: 'ग्राहक संपर्क',
-  },
   payment_settings_item: {
     english: 'Payment Settings',
     hindi: 'भुगतान सेटिंग्स',

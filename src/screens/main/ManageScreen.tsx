@@ -3,6 +3,7 @@ import { Image } from 'expo-image';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
+  Linking,
   RefreshControl,
   ScrollView,
   StatusBar,
@@ -11,8 +12,9 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import { useAuth } from '../../../hooks/useAuth';
 import LiveSessionMap from '../../components/jobs/LiveSessionMap';
-import { ApiService } from '../../services/api';
+import { ApiService, VendorBookingHistoryItem } from '../../services/api';
 import { vendorLocationStreamer } from '../../services/vendorLocationStreamer';
 import { ActiveJob as ActiveJobType, BookingActiveResponse, BookingRequest, VendorCoordinates } from '../../types';
 import { HOME } from './home/homeTheme';
@@ -24,13 +26,16 @@ const MASCOT = require('../../../assets/images/avatars/mascot.png');
 const POLL_INTERVAL_MS = 10000;
 const CONTACT_UNLOCK_RADIUS_METERS = 200;
 
-type ManageTab = 'active' | 'current' | 'future' | 'cancelled';
+type ManageTab = 'active' | 'all' | 'cancelled';
 
 interface ManageScreenProps {
   onBack: () => void;
   onNavigate: (screen: string) => void;
   onBookingSelect?: (booking: BookingRequest) => void;
   activeBooking?: ActiveJobType | null;
+  onActiveJobUpdate?: (job: ActiveJobType) => void;
+  onOpenActiveJob?: (bookingId?: string) => void;
+  onStartFaceVerification?: () => void;
 }
 
 type ActiveBookingDisplay = {
@@ -46,12 +51,14 @@ type ActiveBookingDisplay = {
     latitude: number;
     longitude: number;
   };
+  contactUnlocked?: boolean;
+  status?: string;
+  quoteSubmitted?: boolean;
 };
 
 const tabs: { key: ManageTab; label: string }[] = [
   { key: 'active', label: 'Active Jobs' },
-  { key: 'current', label: 'Current Bookings' },
-  { key: 'future', label: 'Future Requests' },
+  { key: 'all', label: 'All Bookings' },
   { key: 'cancelled', label: 'Cancelled Bookings' },
 ];
 
@@ -72,8 +79,10 @@ const formatDate = (date: Date) =>
     month: 'short',
   });
 
-const formatInr = (value: number | null) =>
-  typeof value === 'number' ? `\u20B9${Math.round(value).toLocaleString('en-IN')}` : 'To estimate';
+const formatInr = (value: number | null | undefined) => {
+  const numeric = typeof value === 'number' ? value : toNumber(value, 0);
+  return `\u20B9${Math.round(numeric).toLocaleString('en-IN')}`;
+};
 
 const maskPhone = (phone: string) => {
   const digits = phone.replace(/\D/g, '');
@@ -119,10 +128,54 @@ const selectedItemsWeight = (items: ActiveJobType['selectedItems']) => {
   return total > 0 ? `${total} kg` : '';
 };
 
-const activeResponseToDisplay = (booking: BookingActiveResponse): ActiveBookingDisplay => {
-  const estimatedFromQuote = booking.quote?.total_amount;
+const activeResponseToActiveJob = (booking: BookingActiveResponse): ActiveJobType => ({
+  id: booking.order_number || booking.booking_id,
+  bookingId: booking.booking_id,
+  customerName: booking.customer?.name || 'Customer',
+  customerPhone: booking.customer?.phone || '',
+  address: booking.pickup_address || '',
+  scrapType: booking.material_summary || 'Mixed Scrap',
+  distance: `${booking.distance_km || 0} km`,
+  paymentMode: 'Cash',
+  estimatedAmount: toNumber(booking.estimated_order_value, 0),
+  createdAt: booking.started_at ? new Date(booking.started_at) : new Date(),
+  status: booking.status === 'arrived' ? 'arrived' : booking.status === 'in_progress' || booking.status === 'ready' ? 'in-progress' : 'on-the-way',
+  customerLocation: {
+    lat: toNumber(booking.pickup_lat, fallbackVendorLocation.latitude),
+    lng: toNumber(booking.pickup_lng, fallbackVendorLocation.longitude),
+  },
+  selectedItems: (booking.order_items || []).map((item, idx) => ({
+    product_id: item.product_id ?? `${booking.booking_id}-${idx}`,
+    product_name: item.product_name,
+    quantity: toNumber(item.quantity, 0),
+    unit: item.unit || 'kg',
+    min_rate: toNumber(item.min_rate || item.rate_per_unit, 0),
+    max_rate: toNumber(item.max_rate || item.rate_per_unit, 0),
+    image_url: item.image_url,
+    category: item.category,
+  })),
+});
+
+const activeResponseToDisplay = (
+  booking: BookingActiveResponse,
+  fallbackActive?: ActiveJobType | null,
+): ActiveBookingDisplay => {
+  const estimatedFromQuote = toNumber(booking.quote?.total_amount);
   const estimatedFromOrder = toNumber(booking.estimated_order_value);
-  const orderValue = typeof estimatedFromQuote === 'number' ? estimatedFromQuote : estimatedFromOrder || null;
+  const itemsTotal = (booking.order_items || []).reduce((sum, item) => {
+    const qty = toNumber(item.quantity);
+    const rate = toNumber(item.rate_per_unit) || toNumber(item.min_rate) || toNumber(item.max_rate) || 0;
+    return sum + qty * rate;
+  }, 0);
+  const fallbackAmount = toNumber(fallbackActive?.estimatedAmount);
+
+  const orderValue =
+    (estimatedFromQuote > 0 ? estimatedFromQuote : null) ??
+    (estimatedFromOrder > 0 ? estimatedFromOrder : null) ??
+    (itemsTotal > 0 ? itemsTotal : null) ??
+    (fallbackAmount > 0 ? fallbackAmount : null) ??
+    0;
+
   const totalWeight =
     toNumber(booking.total_weight) ||
     (booking.order_items?.length ? booking.order_items.reduce((sum, item) => sum + toNumber(item.quantity), 0) : 0);
@@ -143,33 +196,67 @@ const activeResponseToDisplay = (booking: BookingActiveResponse): ActiveBookingD
       latitude: toNumber(booking.pickup_lat, fallbackVendorLocation.latitude),
       longitude: toNumber(booking.pickup_lng, fallbackVendorLocation.longitude),
     },
+    contactUnlocked: Boolean(booking.contact_unlocked || (booking.customer && !booking.customer.phone_masked)),
+    status: booking.status,
+    quoteSubmitted: Boolean(booking.quote),
   };
 };
 
-const appActiveToDisplay = (booking: ActiveJobType): ActiveBookingDisplay => ({
-  id: booking.orderNumber || booking.displayId || booking.bookingId || booking.id,
-  bookingId: booking.bookingId || booking.id,
-  customerName: booking.customerName,
-  customerPhone: booking.customerPhone,
-  address: booking.address,
-  materials: selectedItemsSummary(booking.selectedItems) || booking.scrapType,
-  estimatedAmount: booking.estimatedAmount,
-  weight: booking.estimatedWeight || selectedItemsWeight(booking.selectedItems) || 'To verify',
-  customerLocation: {
-    latitude: booking.customerLocation?.lat ?? fallbackVendorLocation.latitude,
-    longitude: booking.customerLocation?.lng ?? fallbackVendorLocation.longitude,
-  },
-});
+const appActiveToDisplay = (booking: ActiveJobType): ActiveBookingDisplay => {
+  const itemsTotal = (booking.selectedItems || []).reduce((sum, item) => {
+    const qty = toNumber(item.quantity);
+    const rate = toNumber(item.min_rate) || toNumber(item.max_rate) || 0;
+    return sum + qty * rate;
+  }, 0);
+  const estimatedAmount = toNumber(booking.estimatedAmount) || (itemsTotal > 0 ? itemsTotal : 0);
 
-const currentBookingToDisplay = (raw: any): ActiveBookingDisplay | null => {
+  return {
+    id: booking.orderNumber || booking.displayId || booking.bookingId || booking.id,
+    bookingId: booking.bookingId || booking.id,
+    customerName: booking.customerName,
+    customerPhone: booking.customerPhone,
+    address: booking.address,
+    materials: selectedItemsSummary(booking.selectedItems) || booking.scrapType,
+    estimatedAmount,
+    weight: booking.estimatedWeight || selectedItemsWeight(booking.selectedItems) || 'To verify',
+    customerLocation: {
+      latitude: booking.customerLocation?.lat ?? fallbackVendorLocation.latitude,
+      longitude: booking.customerLocation?.lng ?? fallbackVendorLocation.longitude,
+    },
+    status: booking.status,
+  };
+};
+
+const currentBookingToDisplay = (
+  raw: any,
+  fallbackActive?: ActiveJobType | null,
+): ActiveBookingDisplay | null => {
   const booking = raw?.booking || raw;
   if (!booking?.id) {
     return null;
   }
 
-  const itemNames = Array.isArray(booking.items)
-    ? booking.items.map((item: any) => item.product_name || item.product).filter(Boolean)
+  const items = Array.isArray(booking.items)
+    ? booking.items
+    : Array.isArray(booking.order_items)
+    ? booking.order_items
     : [];
+
+  const itemNames = items.map((item: any) => item.product_name || item.product).filter(Boolean);
+
+  const itemsTotal = items.reduce((sum: number, item: any) => {
+    const qty = toNumber(item.quantity);
+    const rate = toNumber(item.rate_per_unit) || toNumber(item.min_rate) || toNumber(item.max_rate) || toNumber(item.rate) || 0;
+    return sum + qty * rate;
+  }, 0);
+
+  const estimatedAmount =
+    toNumber(booking.quote?.total_amount) ||
+    toNumber(booking.estimated_order_value) ||
+    toNumber(booking.estimated_amount) ||
+    (itemsTotal > 0 ? itemsTotal : null) ||
+    toNumber(fallbackActive?.estimatedAmount) ||
+    0;
 
   return {
     id: String(booking.order_number || booking.displayId || booking.id),
@@ -178,7 +265,7 @@ const currentBookingToDisplay = (raw: any): ActiveBookingDisplay | null => {
     customerPhone: booking.customer?.phone || booking.customerPhone || '',
     address: booking.pickup_address || booking.address || booking.customer?.address || 'Pickup address unavailable',
     materials: booking.material_summary || itemNames.join(', ') || booking.scrapType || 'Materials unavailable',
-    estimatedAmount: toNumber(booking.estimated_amount ?? booking.estimated_order_value) || null,
+    estimatedAmount,
     weight: booking.estimated_weight || (toNumber(booking.total_weight) > 0 ? `${toNumber(booking.total_weight).toLocaleString('en-IN')} kg` : 'To verify'),
     customerLocation: {
       latitude: toNumber(booking.pickup_lat, fallbackVendorLocation.latitude),
@@ -187,14 +274,28 @@ const currentBookingToDisplay = (raw: any): ActiveBookingDisplay | null => {
   };
 };
 
-export default function ManageScreen({ onBack, onNavigate, onBookingSelect, activeBooking }: ManageScreenProps) {
+export default function ManageScreen({
+  onBack,
+  onNavigate,
+  onBookingSelect,
+  activeBooking,
+  onActiveJobUpdate,
+  onOpenActiveJob,
+  onStartFaceVerification,
+}: ManageScreenProps) {
+  const { user } = useAuth();
   const [selectedTab, setSelectedTab] = useState<ManageTab>('active');
   const [activeDisplay, setActiveDisplay] = useState<ActiveBookingDisplay | null>(null);
   const [currentBookings, setCurrentBookings] = useState<BookingRequest[]>([]);
+  const [historyBookings, setHistoryBookings] = useState<VendorBookingHistoryItem[]>([]);
   const [vendorCoords, setVendorCoords] = useState<VendorCoordinates | null>(vendorLocationStreamer.getLatestCoords());
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
+
+  const now = new Date();
+  const currentMonth = now.toLocaleDateString('en-IN', { month: 'short' });
+  const currentDay = now.toLocaleDateString('en-IN', { day: '2-digit' });
 
   const loadBookings = useCallback(async (showSpinner = false) => {
     if (showSpinner) {
@@ -202,18 +303,20 @@ export default function ManageScreen({ onBack, onNavigate, onBookingSelect, acti
     }
 
     try {
-      const [currentResponse, queueResponse] = await Promise.all([
+      const [currentResponse, queueResponse, historyResponse] = await Promise.all([
         ApiService.getCurrentBooking().catch(() => null),
         ApiService.getVendorLeadBookings().catch(() => []),
+        ApiService.getVendorBookingHistory().catch(() => []),
       ]);
 
-      const currentShell = currentBookingToDisplay(currentResponse);
+      const currentShell = currentBookingToDisplay(currentResponse, activeBooking);
       let nextActive = currentShell;
 
       if (currentShell?.bookingId) {
         try {
           const detailed = await ApiService.getBookingActive(currentShell.bookingId);
-          nextActive = activeResponseToDisplay(detailed);
+          nextActive = activeResponseToDisplay(detailed, activeBooking);
+          onActiveJobUpdate?.(activeResponseToActiveJob(detailed));
         } catch {
           nextActive = currentShell;
         }
@@ -221,12 +324,13 @@ export default function ManageScreen({ onBack, onNavigate, onBookingSelect, acti
 
       setActiveDisplay(nextActive || (activeBooking ? appActiveToDisplay(activeBooking) : null));
       setCurrentBookings(queueResponse);
+      setHistoryBookings(historyResponse);
       setLastUpdated(new Date());
     } finally {
       setIsLoading(false);
       setIsRefreshing(false);
     }
-  }, [activeBooking]);
+  }, [activeBooking, onActiveJobUpdate]);
 
   useEffect(() => {
     void loadBookings();
@@ -243,9 +347,22 @@ export default function ManageScreen({ onBack, onNavigate, onBookingSelect, acti
     [vendorCoords],
   );
 
-  const canOpenActiveRoute = Boolean(activeBooking);
   const hasActive = Boolean(activeDisplay);
   const hasCurrentBookings = currentBookings.length > 0;
+
+  const handleOpenJob = () => {
+    if (user?.requiresFaceReverification) {
+      if (onStartFaceVerification) {
+        onStartFaceVerification();
+        return;
+      }
+    }
+    if (onOpenActiveJob) {
+      onOpenActiveJob(activeDisplay?.bookingId);
+      return;
+    }
+    onNavigate('active-job');
+  };
 
   return (
     <View style={styles.root}>
@@ -268,8 +385,8 @@ export default function ManageScreen({ onBack, onNavigate, onBookingSelect, acti
           <Image source={PERSON_1} style={styles.personOne} contentFit="contain" />
           <Image source={PERSON_2} style={styles.personTwo} contentFit="contain" />
           <View style={styles.dateTile}>
-            <Text style={styles.dateMonth}>Sep</Text>
-            <Text style={styles.dateDay}>05</Text>
+            <Text style={styles.dateMonth}>{currentMonth}</Text>
+            <Text style={styles.dateDay}>{currentDay}</Text>
           </View>
           <View style={styles.heroCopy}>
             <Text style={styles.heroTitle}>Manage Bookings</Text>
@@ -309,28 +426,27 @@ export default function ManageScreen({ onBack, onNavigate, onBookingSelect, acti
             <ActiveJobPanel
               booking={activeDisplay}
               vendorLocation={vendorLocation}
-              onOpen={() => canOpenActiveRoute && onNavigate('active-job')}
-              canOpen={canOpenActiveRoute}
+              onOpen={handleOpenJob}
             />
           ) : (
             <NoBookingsState onRefresh={() => loadBookings(true)} isRefreshing={isRefreshing} />
           )
         ) : null}
 
-        {!isLoading && selectedTab === 'current' ? (
-          hasCurrentBookings ? (
-            <CurrentBookingsPanel bookings={currentBookings} onOpenBooking={onBookingSelect} />
+        {!isLoading && selectedTab === 'all' ? (
+          historyBookings.length || hasCurrentBookings ? (
+            <AllBookingsPanel bookings={historyBookings} pendingLeads={currentBookings} onOpenBooking={onBookingSelect} onOpenReviews={() => onNavigate('ratings-hub')} />
           ) : (
             <NoBookingsState onRefresh={() => loadBookings(true)} isRefreshing={isRefreshing} />
           )
         ) : null}
 
-        {!isLoading && selectedTab === 'future' ? (
-          <NoBookingsState onRefresh={() => loadBookings(true)} isRefreshing={isRefreshing} />
-        ) : null}
-
         {!isLoading && selectedTab === 'cancelled' ? (
-          <NoBookingsState onRefresh={() => loadBookings(true)} isRefreshing={isRefreshing} />
+          historyBookings.filter((booking) => ['cancelled', 'vendor_expired', 'disputed'].includes(booking.status)).length ? (
+            <AllBookingsPanel bookings={historyBookings.filter((booking) => ['cancelled', 'vendor_expired', 'disputed'].includes(booking.status))} pendingLeads={[]} onOpenBooking={onBookingSelect} onOpenReviews={() => onNavigate('ratings-hub')} />
+          ) : (
+            <NoBookingsState onRefresh={() => loadBookings(true)} isRefreshing={isRefreshing} />
+          )
         ) : null}
       </ScrollView>
     </View>
@@ -341,15 +457,20 @@ function ActiveJobPanel({
   booking,
   vendorLocation,
   onOpen,
-  canOpen,
 }: {
   booking: ActiveBookingDisplay;
   vendorLocation: { latitude: number; longitude: number } | null;
   onOpen: () => void;
-  canOpen: boolean;
 }) {
   const distanceMeters = getDistanceMeters(vendorLocation, booking.customerLocation);
-  const canRevealPhone = distanceMeters <= CONTACT_UNLOCK_RADIUS_METERS;
+  const isWithinProximity = distanceMeters <= CONTACT_UNLOCK_RADIUS_METERS;
+  const isAdvancedStatus = ['arrived', 'in_progress', 'ready', 'completed'].includes(String(booking.status || '').toLowerCase());
+  const canRevealPhone = Boolean(
+    booking.contactUnlocked ||
+    isWithinProximity ||
+    isAdvancedStatus ||
+    booking.quoteSubmitted
+  );
   const phoneLabel = canRevealPhone && booking.customerPhone ? booking.customerPhone : maskPhone(booking.customerPhone);
 
   return (
@@ -380,9 +501,23 @@ function ActiveJobPanel({
             <Text style={styles.customerPhone}>{phoneLabel}</Text>
             {!canRevealPhone ? (
               <Text style={styles.lockedHint}>Phone unlocks within 200 m of the customer.</Text>
-            ) : null}
+            ) : (
+              <Text style={styles.unlockedHint}>Contact unlocked</Text>
+            )}
           </View>
-          <TouchableOpacity style={[styles.roundAction, !canRevealPhone && styles.disabledAction]} activeOpacity={0.78} disabled={!canRevealPhone}>
+          <TouchableOpacity
+            style={[styles.roundAction, !canRevealPhone && styles.disabledAction]}
+            activeOpacity={0.78}
+            disabled={!canRevealPhone}
+            onPress={() => {
+              if (booking.customerPhone) {
+                const cleanDigits = booking.customerPhone.replace(/[^0-9+]/g, '');
+                if (cleanDigits) {
+                  void Linking.openURL(`tel:${cleanDigits}`);
+                }
+              }
+            }}
+          >
             <MaterialIcons name={canRevealPhone ? 'call' : 'lock'} size={20} color={HOME.green} />
           </TouchableOpacity>
         </View>
@@ -396,52 +531,54 @@ function ActiveJobPanel({
         </View>
 
         <TouchableOpacity
-          style={[styles.primaryButton, !canOpen && styles.primaryButtonDisabled]}
+          style={styles.primaryButton}
           onPress={onOpen}
           activeOpacity={0.9}
-          disabled={!canOpen}
         >
-          <Text style={styles.primaryButtonText}>{canOpen ? 'Open active job' : 'Live job synced'}</Text>
-          <MaterialIcons name={canOpen ? 'arrow-forward' : 'cloud-done'} size={18} color="#FFFFFF" />
+          <Text style={styles.primaryButtonText}>Resume Job</Text>
+          <MaterialIcons name="arrow-forward" size={18} color="#FFFFFF" />
         </TouchableOpacity>
       </View>
     </View>
   );
 }
 
-function CurrentBookingsPanel({
+function AllBookingsPanel({
   bookings,
+  pendingLeads,
   onOpenBooking,
+  onOpenReviews,
 }: {
-  bookings: BookingRequest[];
+  bookings: VendorBookingHistoryItem[];
+  pendingLeads: BookingRequest[];
   onOpenBooking?: (booking: BookingRequest) => void;
+  onOpenReviews: () => void;
 }) {
   return (
     <View style={styles.bookingList}>
-      {bookings.map((booking) => (
-        <TouchableOpacity
-          key={booking.id}
-          style={styles.queueCard}
-          activeOpacity={0.88}
-          onPress={() => onOpenBooking?.(booking)}
-          disabled={!onOpenBooking}
-        >
-          <View style={styles.queueTop}>
-            <Text style={styles.bookingCode} numberOfLines={1} adjustsFontSizeToFit>
-              {booking.displayId || booking.orderNumber || booking.id}
-            </Text>
-            <Text style={styles.queueDate} numberOfLines={1}>{formatDate(new Date(booking.createdAt))}</Text>
-          </View>
-          <Text style={styles.queueCustomer} numberOfLines={1}>
-            {booking.customerName}
-          </Text>
+      {pendingLeads.map((booking) => (
+        <TouchableOpacity key={`lead-${booking.id}`} style={styles.queueCard} activeOpacity={0.88} onPress={() => onOpenBooking?.(booking)}>
+          <View style={styles.queueTop}><Text style={styles.bookingCode}>{booking.displayId || booking.orderNumber || booking.id}</Text><Text style={styles.statusText}>REQUESTED</Text></View>
+          <Text style={styles.queueCustomer}>{booking.customerName}</Text>
           <DetailRow icon="recycling" label="Materials" value={booking.scrapType} compact />
           <DetailRow icon="location-on" label="Address" value={booking.address} compact />
-          <View style={styles.queueMeta}>
-            <MetricTile label="Est. value" value={formatInr(booking.estimatedAmount)} icon="payments" compact />
-            <MetricTile label="Weight" value={booking.estimatedWeight || 'To verify'} icon="scale" compact />
-          </View>
         </TouchableOpacity>
+      ))}
+      {bookings.map((booking) => (
+        <View
+          key={booking.booking_id || booking.id}
+          style={styles.queueCard}
+        >
+          <View style={styles.queueTop}>
+            <Text style={styles.bookingCode} numberOfLines={1}>{booking.order_number}</Text>
+            <Text style={styles.statusText}>{String(booking.status).replace('_', ' ').toUpperCase()}</Text>
+          </View>
+          <Text style={styles.queueCustomer} numberOfLines={1}>{booking.customer?.name || 'Customer'}</Text>
+          <DetailRow icon="recycling" label="Materials" value={(booking.items || []).map((item) => item.product_name).filter(Boolean).join(', ') || 'Materials unavailable'} compact />
+          <DetailRow icon="location-on" label="Address" value={booking.pickup_address || 'Pickup address unavailable'} compact />
+          <View style={styles.queueMeta}><MetricTile label="Est. value" value={formatInr(booking.estimated_order_value)} icon="payments" compact /><MetricTile label="Weight" value={`${booking.total_weight || 0} kg`} icon="scale" compact /></View>
+          {booking.status === 'completed' ? <TouchableOpacity style={styles.reviewButton} onPress={onOpenReviews}><MaterialIcons name="rate-review" size={17} color="#FFFFFF" /><Text style={styles.reviewButtonText}>Customer feedback</Text></TouchableOpacity> : null}
+        </View>
       ))}
     </View>
   );
@@ -656,6 +793,7 @@ const styles = StyleSheet.create({
   customerName: { fontSize: 18, fontWeight: '900', color: HOME.ink },
   customerPhone: { marginTop: 2, fontSize: 13, fontWeight: '800', color: HOME.muted },
   lockedHint: { marginTop: 3, fontSize: 11, lineHeight: 14, fontWeight: '700', color: '#9A6B18' },
+  unlockedHint: { marginTop: 3, fontSize: 11, lineHeight: 14, fontWeight: '800', color: HOME.green },
   roundAction: {
     width: 40,
     height: 40,
@@ -726,8 +864,11 @@ const styles = StyleSheet.create({
   },
   queueTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', minWidth: 0 },
   queueDate: { flexShrink: 0, fontSize: 13, fontWeight: '900', color: HOME.greenMid },
+  statusText: { flexShrink: 0, fontSize: 11, fontWeight: '900', color: HOME.greenMid, letterSpacing: 0.4 },
   queueCustomer: { marginTop: 10, fontSize: 19, fontWeight: '900', color: HOME.ink },
   queueMeta: { marginTop: 4, flexDirection: 'row', gap: 10 },
+  reviewButton: { marginTop: 14, minHeight: 42, borderRadius: 12, backgroundColor: HOME.green, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7 },
+  reviewButtonText: { color: '#FFFFFF', fontSize: 13, fontWeight: '900' },
   emptyPanel: {
     marginHorizontal: 18,
     marginTop: 8,

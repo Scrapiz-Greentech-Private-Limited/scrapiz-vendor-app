@@ -39,6 +39,79 @@ class VendorLocationStreamer {
     return this.latestCoords;
   }
 
+  recordCoords(coords: VendorCoordinates) {
+    this.latestCoords = coords;
+    this.notifyListeners();
+    void this.sendLocation(coords.latitude, coords.longitude);
+  }
+
+  async forceStartJobTracking(token?: string) {
+    if (token) {
+      this.token = token;
+    }
+
+    if (!this.token) {
+      this.token = await AuthStorageService.getToken();
+    }
+
+    this.connectWebSocket();
+
+    if (this.watchSubscription) {
+      return;
+    }
+
+    try {
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== 'granted') {
+        return;
+      }
+
+      this.isStreaming = true;
+
+      try {
+        const initial = await Location.getCurrentPositionAsync({
+          accuracy: Location.Accuracy.Balanced,
+        });
+        if (initial?.coords) {
+          const initCoords: VendorCoordinates = {
+            latitude: initial.coords.latitude,
+            longitude: initial.coords.longitude,
+            heading: initial.coords.heading,
+            speed: initial.coords.speed,
+            accuracy: initial.coords.accuracy,
+            timestamp: initial.timestamp,
+          };
+          this.recordCoords(initCoords);
+        }
+      } catch {
+        // Fallback directly to watchPositionAsync
+      }
+
+      this.watchSubscription = await Location.watchPositionAsync(
+        {
+          accuracy: Location.Accuracy.High,
+          distanceInterval: 5,
+          timeInterval: 3000,
+        },
+        (position) => {
+          const nextCoords: VendorCoordinates = {
+            latitude: position.coords.latitude,
+            longitude: position.coords.longitude,
+            heading: position.coords.heading,
+            speed: position.coords.speed,
+            accuracy: position.coords.accuracy,
+            timestamp: position.timestamp,
+          };
+          this.recordCoords(nextCoords);
+        },
+      );
+
+      this.startLocationHeartbeat();
+    } catch (error) {
+      console.warn('Job tracking GPS watch failed', error);
+    }
+  }
+
   async setOnlineStatus(isOnline: boolean) {
     this.isOnline = isOnline;
     if (isOnline) {
@@ -234,7 +307,7 @@ class VendorLocationStreamer {
   }
 
   private async sendHeartbeatLocation() {
-    if (!this.isStreaming || !this.isOnline) {
+    if (!this.isStreaming) {
       return;
     }
 

@@ -4,13 +4,14 @@ import {
   FlatList,
   Modal,
   Platform,
-  SafeAreaView,
+  
   Text,
   TextInput,
   TouchableOpacity,
   View,
   KeyboardAvoidingView,
 } from "react-native";
+import {SafeAreaView} from "react-native-safe-area-context"
 import { getReviewerSeedData, isVendorReviewMode } from "../../config/reviewMode";
 
 interface AddVehicleScreenProps {

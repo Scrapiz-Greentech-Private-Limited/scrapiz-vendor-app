@@ -244,6 +244,76 @@ const BookingDetailSheet = ({
               </View>
             </View>
 
+            {booking.payment && (
+              <View style={styles.infoBlock}>
+                <Text style={styles.infoBlockTitle}>Payment Details</Text>
+                <View style={styles.infoRow}>
+                  <Text style={styles.infoLabel}>Payment status</Text>
+                  <Text style={styles.infoValue}>{toTitle(booking.payment.status)}</Text>
+                </View>
+                <View style={styles.infoRow}>
+                  <Text style={styles.infoLabel}>Payment method</Text>
+                  <Text style={styles.infoValue}>{toTitle(booking.payment.method)}</Text>
+                </View>
+                {booking.payment.utr_reference ? (
+                  <View style={styles.infoRow}>
+                    <Text style={styles.infoLabel}>UTR Reference</Text>
+                    <Text style={styles.infoValue}>{booking.payment.utr_reference}</Text>
+                  </View>
+                ) : null}
+                {booking.payment.submitted_at ? (
+                  <View style={styles.infoRow}>
+                    <Text style={styles.infoLabel}>Submitted at</Text>
+                    <Text style={styles.infoValue}>{formatSessionDate(booking.payment.submitted_at)}</Text>
+                  </View>
+                ) : null}
+                {booking.payment.customer_confirmed_at ? (
+                  <View style={styles.infoRow}>
+                    <Text style={styles.infoLabel}>Customer confirmed at</Text>
+                    <Text style={styles.infoValue}>{formatSessionDate(booking.payment.customer_confirmed_at)}</Text>
+                  </View>
+                ) : null}
+                <View style={styles.infoRow}>
+                  <Text style={styles.infoLabel}>Payment amount</Text>
+                  <Text style={styles.infoValue}>{formatMoney(booking.payment.amount)}</Text>
+                </View>
+              </View>
+            )}
+
+            {booking.vendor_review && (
+              <View style={styles.infoBlock}>
+                <Text style={styles.infoBlockTitle}>Your Rating to Customer</Text>
+                <View style={styles.infoRow}>
+                  <Text style={styles.infoLabel}>Rating</Text>
+                  <Text style={styles.infoValue}>⭐ {booking.vendor_review.rating}/5</Text>
+                </View>
+                {booking.vendor_review.recommendation !== undefined && (
+                  <View style={styles.infoRow}>
+                    <Text style={styles.infoLabel}>Recommendation</Text>
+                    <Text style={styles.infoValue}>{booking.vendor_review.recommendation ? '✓ Recommended' : '✗ Not recommended'}</Text>
+                  </View>
+                )}
+                {booking.vendor_review.summary_title ? (
+                  <View style={styles.infoRow}>
+                    <Text style={styles.infoLabel}>Summary</Text>
+                    <Text style={styles.infoValue}>{booking.vendor_review.summary_title}</Text>
+                  </View>
+                ) : null}
+                {booking.vendor_review.review_text ? (
+                  <View style={styles.infoRow}>
+                    <Text style={styles.infoLabel}>Review</Text>
+                    <Text style={styles.infoValue}>{booking.vendor_review.review_text}</Text>
+                  </View>
+                ) : null}
+                {booking.vendor_review.submitted_at ? (
+                  <View style={styles.infoRow}>
+                    <Text style={styles.infoLabel}>Submitted at</Text>
+                    <Text style={styles.infoValue}>{formatSessionDate(booking.vendor_review.submitted_at)}</Text>
+                  </View>
+                ) : null}
+              </View>
+            )}
+
             <View style={styles.infoBlock}>
               <Text style={styles.infoBlockTitle}>Products Purchased</Text>
               {productRows.length ? (
@@ -418,6 +488,8 @@ export default function DutySessionDetailsScreen({
                 location={{ latitude, longitude }}
                 height={230}
                 label={activeSession.status === 'live' ? 'LIVE SESSION TRACKING' : 'SESSION LOCATION'}
+                markerPoints={activeSession.route_points}
+                showOverlay={false}
               />
             ) : (
               <View style={styles.noLocationMap}>

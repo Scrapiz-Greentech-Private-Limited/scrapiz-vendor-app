@@ -45,6 +45,17 @@ const isExpiredAuthError = (error: unknown) =>
   error instanceof ApiHttpError &&
   (error.status === 401 || /token expired/i.test(error.message || ''));
 
+/** Returns true for transient server-side or gateway errors that should NOT
+ *  clear session state or trigger a re-route — we simply ride them out. */
+const isTransientServerError = (error: unknown): boolean => {
+  if (!(error instanceof ApiHttpError)) return false;
+  return error.status >= 500 || error.status === 429;
+};
+
+/** Exponential backoff delay: base * 2^attempt, capped at maxMs */
+const backoffDelay = (attempt: number, baseMs = 2000, maxMs = 30000): number =>
+  Math.min(baseMs * Math.pow(2, attempt), maxMs);
+
 const mapVendorToUser = (
   baseUser: Pick<User, 'id' | 'name' | 'phone' | 'email'> & Partial<User>,
   vendorProfile?: VendorProfile | null,
@@ -83,6 +94,16 @@ const mapVendorToUser = (
     vendorProfile?.requires_profile_image_upload ??
     baseUser.requiresProfileImageUpload ??
     false,
+  requiresFaceReverification:
+    vendorProfile?.requires_face_reverification ??
+    vendorProfile?.biometric?.reverification_requested ??
+    baseUser.requiresFaceReverification ??
+    false,
+  faceReverificationMessage:
+    vendorProfile?.face_reverification_message ??
+    vendorProfile?.biometric?.reverification_message ??
+    baseUser.faceReverificationMessage ??
+    null,
 });
 
 export const useAuth = () => {
@@ -133,7 +154,7 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
     });
   };
 
-  const hydrateWithVendorProfile = async (baseUser: User): Promise<User> => {
+  const hydrateWithVendorProfile = async (baseUser: User, attempt = 0): Promise<User> => {
     try {
       const vendorProfile = await ApiService.getVendorProfile();
       const merged = mapVendorToUser(baseUser, vendorProfile);
@@ -150,6 +171,21 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
 
       if (error instanceof ApiHttpError && error.status === 404) {
         const merged = mapVendorToUser(baseUser, null);
+        await persistUser(merged);
+        identifyUser(merged);
+        return merged;
+      }
+
+      // Transient 5xx/429: back off and retry up to 3 times, then fall back
+      // to the cached user so the app stays usable without a blank screen.
+      if (isTransientServerError(error)) {
+        console.warn(`Failed to hydrate vendor profile (attempt ${attempt + 1}):`, error);
+        if (attempt < 3) {
+          await new Promise((res) => setTimeout(res, backoffDelay(attempt)));
+          return hydrateWithVendorProfile(baseUser, attempt + 1);
+        }
+        // After 3 retries fall back to cached state — never block initial load.
+        const merged = mapVendorToUser(baseUser, undefined);
         await persistUser(merged);
         identifyUser(merged);
         return merged;
@@ -185,11 +221,28 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
         ]);
 
         if (!storedUser || !token) {
+          // No stored session — show the auth screen immediately.
           setIsInitialLoading(false);
           return;
         }
 
-        await hydrateWithVendorProfile(storedUser as User);
+        // Unblock the UI immediately with cached state so the vendor sees
+        // the app in <100 ms even when the backend is temporarily unavailable.
+        // Profile hydration continues in the background.
+        setUser(storedUser as User);
+        setIsInitialLoading(false);
+
+        // Background hydration: refreshes vendor profile from the server.
+        // Failures here are non-blocking — the cached user remains active.
+        hydrateWithVendorProfile(storedUser as User).catch((error) => {
+          if (isExpiredAuthError(error)) {
+            // Token genuinely expired — force re-login.
+            AuthStorageService.clearSession().catch(() => undefined);
+            setUser(null);
+          }
+          // All other errors (network, 5xx) are already handled inside
+          // hydrateWithVendorProfile with retries + cached fallback.
+        });
       } catch (error) {
         console.error('Failed to load user from storage:', error);
         if (isExpiredAuthError(error)) {
@@ -203,7 +256,6 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
             await AuthStorageService.clearSession();
           }
         }
-      } finally {
         setIsInitialLoading(false);
       }
     };

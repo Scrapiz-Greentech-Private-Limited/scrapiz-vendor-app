@@ -11,6 +11,11 @@ interface CoordinatePoint {
   longitude: number | string | null | undefined;
 }
 
+interface MarkerPoint extends CoordinatePoint {
+  label?: string;
+  kind?: string;
+}
+
 interface LiveSessionMapProps {
   vendorLocation?: CoordinatePoint | null;
   customerLocation?: CoordinatePoint;
@@ -21,6 +26,7 @@ interface LiveSessionMapProps {
   routeCoordinates?: [number, number][];
   routeColor?: string;
   routeDashed?: boolean;
+  markerPoints?: MarkerPoint[];
   showOverlay?: boolean;
 }
 
@@ -34,6 +40,7 @@ const LiveSessionMap: React.FC<LiveSessionMapProps> = ({
   routeCoordinates,
   routeColor = '#0EA5E9',
   routeDashed = true,
+  markerPoints,
   showOverlay = true,
 }) => {
   const defaultLocation = {
@@ -56,6 +63,9 @@ const LiveSessionMap: React.FC<LiveSessionMapProps> = ({
     latitude: resolvedCustomerLocation.latitude + 0.012,
     longitude: resolvedCustomerLocation.longitude - 0.012,
   });
+  const resolvedMarkerPoints = markerPoints?.filter((point) => (
+    Number.isFinite(Number(point.latitude)) && Number.isFinite(Number(point.longitude))
+  )) || [];
 
   const routeGeoJson = useMemo(
     () => ({
@@ -65,7 +75,7 @@ const LiveSessionMap: React.FC<LiveSessionMapProps> = ({
           type: 'Feature',
           geometry: {
             type: 'LineString',
-            coordinates: routeCoordinates && routeCoordinates.length >= 2 ? routeCoordinates : [
+            coordinates: routeCoordinates && routeCoordinates.length >= 2 ? routeCoordinates : resolvedMarkerPoints.length >= 2 ? resolvedMarkerPoints.map((point) => [Number(point.longitude), Number(point.latitude)]) : [
               [fallbackVendorLocation.longitude, fallbackVendorLocation.latitude],
               [resolvedCustomerLocation.longitude, resolvedCustomerLocation.latitude],
             ],
@@ -74,7 +84,7 @@ const LiveSessionMap: React.FC<LiveSessionMapProps> = ({
         },
       ],
     }),
-    [fallbackVendorLocation, resolvedCustomerLocation, routeCoordinates],
+    [fallbackVendorLocation, resolvedCustomerLocation, routeCoordinates, resolvedMarkerPoints],
   );
 
   const centerCoordinate: [number, number] = [
@@ -105,25 +115,27 @@ const LiveSessionMap: React.FC<LiveSessionMapProps> = ({
           />
         </Mapbox.ShapeSource>
 
-        <Mapbox.PointAnnotation
-          id="customer-pin"
-          coordinate={[resolvedCustomerLocation.longitude, resolvedCustomerLocation.latitude]}
-          anchor={{ x: 0.5, y: 0.5 }}
-        >
-          <View style={[styles.nativePin, styles.customerPin]}>
-            <View style={[styles.nativePinInner, styles.customerPinInner]} />
-          </View>
-        </Mapbox.PointAnnotation>
-
-        <Mapbox.PointAnnotation
-          id="vendor-pin"
-          coordinate={[fallbackVendorLocation.longitude, fallbackVendorLocation.latitude]}
-          anchor={{ x: 0.5, y: 0.5 }}
-        >
-          <View style={[styles.nativePin, styles.vendorPin]}>
-            <View style={[styles.nativePinInner, styles.vendorPinInner]} />
-          </View>
-        </Mapbox.PointAnnotation>
+        {resolvedMarkerPoints.length ? resolvedMarkerPoints.map((point, index) => (
+          <Mapbox.PointAnnotation
+            key={`session-marker-${index}-${point.latitude}-${point.longitude}`}
+            id={`session-marker-${index}`}
+            coordinate={[Number(point.longitude), Number(point.latitude)]}
+            anchor={{ x: 0.5, y: 0.5 }}
+          >
+            <View style={[styles.nativePin, point.kind === 'start' ? styles.vendorPin : styles.customerPin]}>
+              <View style={[styles.nativePinInner, point.kind === 'start' ? styles.vendorPinInner : styles.customerPinInner]} />
+            </View>
+          </Mapbox.PointAnnotation>
+        )) : (
+          <>
+            <Mapbox.PointAnnotation id="customer-pin" coordinate={[resolvedCustomerLocation.longitude, resolvedCustomerLocation.latitude]} anchor={{ x: 0.5, y: 0.5 }}>
+              <View style={[styles.nativePin, styles.customerPin]}><View style={[styles.nativePinInner, styles.customerPinInner]} /></View>
+            </Mapbox.PointAnnotation>
+            <Mapbox.PointAnnotation id="vendor-pin" coordinate={[fallbackVendorLocation.longitude, fallbackVendorLocation.latitude]} anchor={{ x: 0.5, y: 0.5 }}>
+              <View style={[styles.nativePin, styles.vendorPin]}><View style={[styles.nativePinInner, styles.vendorPinInner]} /></View>
+            </Mapbox.PointAnnotation>
+          </>
+        )}
       </Mapbox.MapView>
 
       {showOverlay ? (

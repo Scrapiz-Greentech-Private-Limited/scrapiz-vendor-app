@@ -14,7 +14,7 @@ import {
 import { AuthStorageService } from './authStorage';
 import { ReviewModeStateService } from './reviewModeState';
 
-const FRONTEND_KEY =
+export const FRONTEND_KEY =
   (Constants.expoConfig?.extra as any)?.env?.EXPO_PUBLIC_FRONTEND_SECRET ||
   (Constants.expoConfig?.extra as any)?.env?.EXPO_PUBLIC_VENDOR_FRONTEND_SECRET ||
   (Constants.manifest as any)?.extra?.env?.EXPO_PUBLIC_FRONTEND_SECRET ||
@@ -88,6 +88,8 @@ export interface VendorProfile {
   rejection_reason?: string | null;
   vehicle?: VendorVehicle | null;
   documents?: VendorProfileDocument[];
+  requires_face_reverification?: boolean;
+  face_reverification_message?: string | null;
   biometric?: {
     is_verified?: boolean;
     vector_id?: string | null;
@@ -95,6 +97,8 @@ export interface VendorProfile {
     source_image_url?: string | null;
     status?: 'pending' | 'processing' | 'verified' | 'rejected';
     rejection_reason?: string | null;
+    reverification_requested?: boolean;
+    reverification_message?: string | null;
   } | null;
 }
 
@@ -209,6 +213,21 @@ export interface VendorPendingReviewBooking {
   completed_at?: string | null;
   total_payout?: string | number | null;
   pickup_address?: string | null;
+}
+
+export interface VendorBookingHistoryItem {
+  id: string;
+  booking_id: string;
+  status: string;
+  order_number: string;
+  pickup_address?: string | null;
+  estimated_order_value?: number | null;
+  total_weight?: number | null;
+  created_at?: string | null;
+  started_at?: string | null;
+  arrived_at?: string | null;
+  customer?: { name?: string; phone?: string; address?: string };
+  items?: Array<{ product_name?: string; quantity?: string | number; unit?: string }>;
 }
 
 export interface VendorReview {
@@ -1256,6 +1275,11 @@ export class ApiService {
     return this.get<{ booking?: any; message?: string }>('/booking/current/');
   }
 
+  static async getVendorBookingHistory(): Promise<VendorBookingHistoryItem[]> {
+    const response = await this.get<{ bookings?: VendorBookingHistoryItem[] }>('/booking/history/');
+    return response.bookings || [];
+  }
+
   static async startBookingJourney(bookingId: string): Promise<{ success?: boolean; message?: string }> {
     if (isVendorReviewMode()) {
       await ReviewModeStateService.mutateActiveBooking((booking) =>
@@ -1374,6 +1398,10 @@ export class ApiService {
         actual_weight_kg: number;
       }>;
       remarks?: string;
+      /** Vendor’s payout preference. Defaults to 'upi' if not provided. */
+      preferred_payment_method?: 'upi' | 'cash';
+      /** Fallback if UPI unavailable. */
+      fallback_payment_method?: 'cash' | 'none';
     },
   ): Promise<{ success?: boolean; message?: string; data?: any }> {
     if (isVendorReviewMode()) {
@@ -1382,14 +1410,16 @@ export class ApiService {
         0,
       );
 
+      const pref = payload.preferred_payment_method ?? 'upi';
+
       await ReviewModeStateService.mutateActiveBooking((booking) =>
         booking && booking.bookingId === bookingId
           ? {
               ...booking,
-              quoteStatus: 'awaiting_payment',
-              paymentMethod: 'upi',
+              quoteStatus: pref === 'upi' ? 'awaiting_customer_upi' : 'awaiting_payment',
+              paymentMethod: pref,
               quoteTotalAmount: totalAmount,
-              customerUpiId: 'review@sbi',
+              customerUpiId: pref === 'upi' ? 'review@sbi' : '',
               selectedItems: (booking.selectedItems || []).map((selected) => {
                 const quoted = payload.items.find((item) => String(item.product_id) === String(selected.product_id));
                 return quoted
@@ -1409,15 +1439,17 @@ export class ApiService {
         message: 'Review quote submitted.',
         data: {
           total_amount: totalAmount,
-          payment_method: 'upi',
+          preferred_payment_method: pref,
         },
       };
     }
 
-    return this.post<{ success?: boolean; message?: string; data?: any }>(
-      `/booking/${bookingId}/quote/submit/`,
-      payload,
-    );
+    // Use v2 endpoint when preferred_payment_method is provided
+    const endpoint = payload.preferred_payment_method
+      ? `/booking/${bookingId}/quote/submit-v2/`
+      : `/booking/${bookingId}/quote/submit/`;
+
+    return this.post<{ success?: boolean; message?: string; data?: any }>(endpoint, payload);
   }
 
   static confirmBookingQuotePayment(
@@ -1438,15 +1470,91 @@ export class ApiService {
       ).then(() => ({
         success: true,
         message: 'Review quote payment confirmed.',
-        data: {
-          upi_reference: upiReference,
-        },
+        data: { upi_reference: upiReference },
       }));
     }
 
     return this.post<{ success?: boolean; message?: string; data?: any }>(
       `/booking/${bookingId}/quote/confirm-payment/`,
       { upi_reference: upiReference },
+    );
+  }
+
+  /** GET vendor payment state for a booking (new payment architecture). */
+  static getVendorPaymentState(
+    bookingId: string,
+  ): Promise<{ success?: boolean; data?: any }> {
+    if (isVendorReviewMode()) {
+      return Promise.resolve({ success: true, data: { payment_transaction: null } });
+    }
+    return this.get<{ success?: boolean; data?: any }>(`/booking/${bookingId}/payment/`);
+  }
+
+  /**
+   * POST vendor submits UTR after making UPI payment.
+   * Triggers customer confirmation request.
+   */
+  static submitPaymentReference(
+    bookingId: string,
+    upiReference: string,
+  ): Promise<{ success?: boolean; message?: string; data?: any }> {
+    if (isVendorReviewMode()) {
+      return ReviewModeStateService.mutateActiveBooking((booking) =>
+        booking && booking.bookingId === bookingId
+          ? { ...booking, quoteStatus: 'customer_confirmation_pending', upiReference }
+          : booking,
+      ).then(() => ({
+        success: true,
+        message: 'Payment reference submitted. Waiting for customer.',
+        data: { upi_reference: upiReference },
+      }));
+    }
+    return this.post<{ success?: boolean; message?: string; data?: any }>(
+      `/booking/${bookingId}/payment/submit-reference/`,
+      { upi_reference: upiReference },
+    );
+  }
+
+  /** POST vendor signals cash has been handed over. */
+  static submitCashHandedOver(
+    bookingId: string,
+  ): Promise<{ success?: boolean; message?: string; data?: any }> {
+    if (isVendorReviewMode()) {
+      return ReviewModeStateService.mutateActiveBooking((booking) =>
+        booking && booking.bookingId === bookingId
+          ? { ...booking, quoteStatus: 'customer_confirmation_pending' }
+          : booking,
+      ).then(() => ({
+        success: true,
+        message: 'Cash handover recorded.',
+        data: {},
+      }));
+    }
+    return this.post<{ success?: boolean; message?: string; data?: any }>(
+      `/booking/${bookingId}/payment/cash-handed-over/`,
+    );
+  }
+
+  /**
+   * POST vendor switches to cash fallback when UPI is not possible.
+   * Only works if fallback_payment_method = 'cash' on the transaction.
+   */
+  static switchToCashFallback(
+    bookingId: string,
+  ): Promise<{ success?: boolean; message?: string; data?: any }> {
+    if (isVendorReviewMode()) {
+      return ReviewModeStateService.mutateActiveBooking((booking) =>
+        booking && booking.bookingId === bookingId
+          ? { ...booking, paymentMethod: 'cash', cashFallback: true }
+          : booking,
+      ).then(() => ({
+        success: true,
+        message: 'Switched to cash fallback.',
+        data: {},
+      }));
+    }
+    return this.post<{ success?: boolean; message?: string; data?: any }>(
+      `/booking/${bookingId}/payment/cash-fallback/`,
     );
   }
 

@@ -87,12 +87,6 @@ const MoreMenuScreen: React.FC<MoreMenuScreenProps> = ({ onBack, onNavigate, onL
       action: () => onNavigate('ratings-hub'),
     },
     {
-      key: 'contacts',
-      label: 'Contacts',
-      icon: 'contacts',
-      action: () => onNavigate('contacts'),
-    },
-    {
       key: 'support',
       label: 'Customer support messages',
       icon: 'support-agent',
