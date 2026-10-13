@@ -109,9 +109,15 @@ export default {
       reactCompiler: true,
     },
     extra: {
-      posthogProjectToken: process.env.EXPO_PUBLIC_POSTHOG_PROJECT_TOKEN,
-      posthogHost: process.env.EXPO_PUBLIC_POSTHOG_HOST,
-      mapboxAccessToken: process.env.EXPO_PUBLIC_MAPBOX_API_KEY,
+      posthogProjectToken:
+        process.env.EXPO_PUBLIC_POSTHOG_PROJECT_TOKEN ||
+        process.env.EXPO_PUBLIC_POSTHOG_API_KEY ||
+        "phc_yDUrfG5dmJQ8CCNXiD8VFh2VoF9adRRyiyjasxobou22",
+      posthogHost:
+        process.env.EXPO_PUBLIC_POSTHOG_HOST || "https://us.i.posthog.com",
+      mapboxAccessToken:
+        process.env.EXPO_PUBLIC_MAPBOX_API_KEY ||
+        "pk.eyJ1IjoiYXlhYW5hbWphZCIsImEiOiJjbWhxbW1veHcwdnB2MmpzNDA2emo1aWp3In0.Mc5kN89_lqGeagn5jWvvzA",
       env: {
         EXPO_PUBLIC_API_URL:
           process.env.EXPO_PUBLIC_API_URL || "https://api.scrapiz.in/api",

@@ -1,5 +1,6 @@
 import { AppState, AppStateStatus } from 'react-native';
 import * as Location from 'expo-location';
+import * as TaskManager from 'expo-task-manager';
 import { ApiService } from './api';
 import { AuthStorageService } from './authStorage';
 import { VendorCoordinates } from '../types';
@@ -7,6 +8,58 @@ import { VendorCoordinates } from '../types';
 type LocationListener = (coords: VendorCoordinates | null) => void;
 
 const LOCATION_HEARTBEAT_MS = 15000;
+const BACKGROUND_LOCATION_TASK = 'scrapiz-vendor-background-location';
+
+type BackgroundLocationTaskData = {
+  locations?: Location.LocationObject[];
+};
+
+const toVendorCoordinates = (location: Location.LocationObject): VendorCoordinates => ({
+  latitude: location.coords.latitude,
+  longitude: location.coords.longitude,
+  heading: location.coords.heading,
+  speed: location.coords.speed,
+  accuracy: location.coords.accuracy,
+  timestamp: location.timestamp,
+});
+
+/**
+ * This task is registered at module load time so Android can invoke it when the
+ * app process is not in the foreground. Keep it independent of the React UI.
+ */
+TaskManager.defineTask<BackgroundLocationTaskData>(
+  BACKGROUND_LOCATION_TASK,
+  async ({ data, error }) => {
+    if (error) {
+      console.warn('Background vendor location task failed', error);
+      return;
+    }
+
+    const location = data?.locations?.[data.locations.length - 1];
+    if (!location) {
+      return;
+    }
+
+    const user = await AuthStorageService.getUser();
+    if (!user?.isOnline) {
+      await Location.stopLocationUpdatesAsync(BACKGROUND_LOCATION_TASK).catch(() => undefined);
+      return;
+    }
+
+    const coords = toVendorCoordinates(location);
+    try {
+      await ApiService.updateVendorLocation({
+        latitude: coords.latitude,
+        longitude: coords.longitude,
+        accuracy: coords.accuracy ?? null,
+        timestamp: coords.timestamp,
+      });
+    } catch (taskError) {
+      // A transient network failure should not unregister the location task.
+      console.warn('Unable to upload background vendor location', taskError);
+    }
+  },
+);
 
 class VendorLocationStreamer {
   private token: string | null = null;
@@ -166,6 +219,7 @@ class VendorLocationStreamer {
         },
       );
 
+      await this.startBackgroundLocationUpdates();
       this.startLocationHeartbeat();
     } catch (error) {
       console.warn('Vendor GPS watch failed', error);
@@ -191,6 +245,8 @@ class VendorLocationStreamer {
       clearInterval(this.heartbeatInterval);
       this.heartbeatInterval = null;
     }
+
+    void this.stopBackgroundLocationUpdates();
   }
 
   destroy() {
@@ -219,6 +275,7 @@ class VendorLocationStreamer {
   private async syncBackgroundState() {
     await this.refreshBackgroundPermission();
     if (this.hasBackgroundPermission) {
+      await this.startBackgroundLocationUpdates();
       return;
     }
 
@@ -359,6 +416,44 @@ class VendorLocationStreamer {
       this.hasBackgroundPermission = background.status === 'granted';
     } catch {
       this.hasBackgroundPermission = false;
+    }
+  }
+
+  private async startBackgroundLocationUpdates() {
+    if (!this.isOnline || !this.hasBackgroundPermission) {
+      return;
+    }
+
+    try {
+      const alreadyStarted = await Location.hasStartedLocationUpdatesAsync(BACKGROUND_LOCATION_TASK);
+      if (alreadyStarted) {
+        return;
+      }
+
+      await Location.startLocationUpdatesAsync(BACKGROUND_LOCATION_TASK, {
+        accuracy: Location.Accuracy.High,
+        distanceInterval: 10,
+        timeInterval: 5000,
+        foregroundService: {
+          notificationTitle: 'Scrapiz Partner is Online',
+          notificationBody: 'Your location is being shared for pickup coordination.',
+          notificationColor: '#16a34a',
+          killServiceOnDestroy: false,
+        },
+      });
+    } catch (error) {
+      console.warn('Unable to start background vendor location updates', error);
+    }
+  }
+
+  private async stopBackgroundLocationUpdates() {
+    try {
+      const started = await Location.hasStartedLocationUpdatesAsync(BACKGROUND_LOCATION_TASK);
+      if (started) {
+        await Location.stopLocationUpdatesAsync(BACKGROUND_LOCATION_TASK);
+      }
+    } catch (error) {
+      console.warn('Unable to stop background vendor location updates', error);
     }
   }
 }

@@ -1,34 +1,45 @@
 import Constants from 'expo-constants'
 import PostHog from 'posthog-react-native'
 
-const projectToken = Constants.expoConfig?.extra?.posthogProjectToken as string | undefined
-const host = Constants.expoConfig?.extra?.posthogHost as string | undefined
-const isPostHogConfigured = Boolean(projectToken && host)
+const rawProjectToken =
+  (Constants.expoConfig?.extra?.posthogProjectToken as string | undefined) ||
+  process.env.EXPO_PUBLIC_POSTHOG_PROJECT_TOKEN ||
+  process.env.EXPO_PUBLIC_POSTHOG_API_KEY ||
+  '';
 
-if (__DEV__ && !projectToken) {
-  console.error(
-    'EXPO_PUBLIC_POSTHOG_PROJECT_TOKEN variable required by PostHog is missing or un-configured, this causes events to be silently missed. This error stops appearing once EXPO_PUBLIC_POSTHOG_PROJECT_TOKEN is configured',
-  )
+const host =
+  (Constants.expoConfig?.extra?.posthogHost as string | undefined) ||
+  process.env.EXPO_PUBLIC_POSTHOG_HOST ||
+  'https://us.i.posthog.com';
+
+const isPostHogConfigured = Boolean(
+  rawProjectToken &&
+  rawProjectToken !== 'placeholder_token' &&
+  rawProjectToken !== 'placeholder_key' &&
+  rawProjectToken !== 'disabled_posthog_key' &&
+  host,
+);
+
+if (__DEV__ && !isPostHogConfigured) {
+  console.warn(
+    'EXPO_PUBLIC_POSTHOG_PROJECT_TOKEN variable required by PostHog is missing or un-configured. Analytics and session replay will be safely disabled.',
+  );
 }
 
-if (__DEV__ && !host) {
-  console.error(
-    'EXPO_PUBLIC_POSTHOG_HOST variable required by PostHog is missing or un-configured, this causes events to be silently missed. This error stops appearing once EXPO_PUBLIC_POSTHOG_HOST is configured',
-  )
-}
-
-export const posthog = new PostHog(projectToken as string, {
-  host: host as string,
+// PostHog constructor asserts that apiKey is a non-empty string.
+// If project token is missing, pass a fallback dummy key with disabled: true so it never crashes at startup.
+export const posthog = new PostHog(isPostHogConfigured ? rawProjectToken : 'disabled_posthog_key', {
+  host,
   disabled: !isPostHogConfigured,
-  captureAppLifecycleEvents: true,
+  captureAppLifecycleEvents: isPostHogConfigured,
   errorTracking: {
     autocapture: {
-      uncaughtExceptions: true,
-      unhandledRejections: true,
+      uncaughtExceptions: isPostHogConfigured,
+      unhandledRejections: isPostHogConfigured,
       console: [],
     },
   },
-  enableSessionReplay: true,
+  enableSessionReplay: isPostHogConfigured,
   sessionReplayConfig: {
     maskAllTextInputs: false,
     maskAllImages: false,
@@ -37,6 +48,6 @@ export const posthog = new PostHog(projectToken as string, {
     sampleRate: undefined,
     throttleDelayMs: 1000,
   },
-})
+});
 
-export const isPostHogEnabled = isPostHogConfigured
+export const isPostHogEnabled = isPostHogConfigured;

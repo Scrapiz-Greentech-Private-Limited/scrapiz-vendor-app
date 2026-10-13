@@ -1,7 +1,6 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   Animated,
   AppState,
   Easing,
@@ -64,13 +63,15 @@ const SCREEN_COPY = {
     back: 'Back',
     step3: 'Step 3 of 4',
     bgTitle: 'Allow background tracking',
-    bgBody: 'Keep location active while navigating, taking calls, or locking your phone.',
+    bgBody: 'Keep location active while the app is minimized or your phone is locked, while you remain Online.',
     bgPanelTitle: 'Background location access',
     bgPanelBody:
-      'Android may send this through Settings. We only need one last approval so live tracking stays active off-screen.',
+      'Scrapiz Partner collects location data to enable live vendor location sharing and pickup coordination even when the app is closed or not in use. Location is shared only while you are Online and stops when you go Offline. Android may send this through Settings.',
     bgEnabled: 'Allowed all the time',
     bgPending: 'Keep location alive when app is minimized',
     bgSettings: 'Finish this from Settings on your phone',
+    bgReturning: 'Return to Scrapiz Partner after selecting Allow all the time. We will verify the setting automatically.',
+    bgChecking: 'Checking background access…',
     bgButton: 'Enable background access',
     bgDone: 'Background tracking enabled',
     openSettings: 'Open phone settings',
@@ -128,10 +129,12 @@ const SCREEN_COPY = {
     bgBody: 'नेविगेशन, कॉल या फोन लॉक होने पर भी लोकेशन सक्रिय रखें।',
     bgPanelTitle: 'बैकग्राउंड लोकेशन एक्सेस',
     bgPanelBody:
-      'Android आपको Settings पर भेज सकता है। हमें बस एक आखिरी अनुमति चाहिए ताकि स्क्रीन बंद होने पर भी ट्रैकिंग चलती रहे।',
+      'Scrapiz Partner collects location data to enable live vendor location sharing and pickup coordination even when the app is closed or not in use. Location is shared only while you are Online and stops when you go Offline. Android may send this through Settings.',
     bgEnabled: 'हमेशा अनुमति दी गई',
     bgPending: 'ऐप मिनिमाइज़ होने पर भी लोकेशन चालू रखें',
     bgSettings: 'इसे फोन की Settings से पूरा करें',
+    bgReturning: 'Allow all the time चुनने के बाद Scrapiz Partner में वापस आएँ। हम अनुमति को अपने आप जाँच लेंगे।',
+    bgChecking: 'बैकग्राउंड एक्सेस जाँची जा रही है…',
     bgButton: 'बैकग्राउंड एक्सेस सक्षम करें',
     bgDone: 'बैकग्राउंड ट्रैकिंग सक्षम है',
     openSettings: 'फोन Settings खोलें',
@@ -158,6 +161,14 @@ interface LocationPermissionGateScreenProps {
   onLogout: () => void;
 }
 
+type PermissionFlowState =
+  | 'intro'
+  | 'foreground'
+  | 'requesting_foreground'
+  | 'background'
+  | 'opening_settings'
+  | 'complete';
+
 export default function LocationPermissionGateScreen({
   onContinue,
   onLogout,
@@ -166,22 +177,27 @@ export default function LocationPermissionGateScreen({
   const { language, setLanguage } = useLanguage();
   const [languageDrawerOpen, setLanguageDrawerOpen] = useState(false);
   const drawerAnim = useState(() => new Animated.Value(320))[0];
-  const [isBusy, setIsBusy] = useState(false);
   const [foregroundGranted, setForegroundGranted] = useState(false);
   const [backgroundGranted, setBackgroundGranted] = useState(false);
   const [backgroundAvailable, setBackgroundAvailable] = useState(true);
-  const [currentStep, setCurrentStep] = useState(0);
+  const [flowState, setFlowState] = useState<PermissionFlowState>('intro');
+  const requestInFlightRef = useRef(false);
   const copy = language === 'hindi' ? SCREEN_COPY.hindi : SCREEN_COPY.english;
 
-  const syncPermissionState = useCallback(async () => {
+  const currentStep = flowState === 'intro' ? 0 : flowState === 'complete' ? 3 : flowState === 'background' || flowState === 'opening_settings' ? 2 : 1;
+  const isBusy = flowState === 'requesting_foreground' || flowState === 'opening_settings';
+
+  const readPermissionState = useCallback(async () => {
     try {
       const [foreground, background] = await Promise.all([
         Location.getForegroundPermissionsAsync(),
         Location.getBackgroundPermissionsAsync(),
       ]);
 
-      setForegroundGranted(foreground.status === 'granted');
-      setBackgroundGranted(background.status === 'granted');
+      const nextForegroundGranted = foreground.status === 'granted';
+      const nextBackgroundGranted = background.status === 'granted';
+      setForegroundGranted(nextForegroundGranted);
+      setBackgroundGranted(nextBackgroundGranted);
 
       if (Platform.OS === 'android' && Location.isBackgroundLocationAvailableAsync) {
         const isAvailable = await Location.isBackgroundLocationAvailableAsync();
@@ -189,38 +205,53 @@ export default function LocationPermissionGateScreen({
       } else {
         setBackgroundAvailable(true);
       }
+
+      return {
+        foregroundGranted: nextForegroundGranted,
+        backgroundGranted: nextBackgroundGranted,
+      };
     } catch {
       trackVendorFailure('location_permission_sync', 'Failed to sync location permissions');
       setForegroundGranted(false);
       setBackgroundGranted(false);
       setBackgroundAvailable(false);
+      return { foregroundGranted: false, backgroundGranted: false };
     }
   }, []);
 
   useEffect(() => {
-    void syncPermissionState();
-  }, [syncPermissionState]);
+    let mounted = true;
+    void readPermissionState().then(({ foregroundGranted: nextForeground, backgroundGranted: nextBackground }) => {
+      if (!mounted) return;
+      if (nextBackground && nextForeground) {
+        setFlowState('complete');
+      } else if (nextForeground) {
+        setFlowState('background');
+      } else {
+        setFlowState('intro');
+      }
+    });
+    return () => {
+      mounted = false;
+    };
+  }, [readPermissionState]);
 
   useEffect(() => {
     const subscription = AppState.addEventListener('change', (state) => {
-      if (state === 'active') {
-        void syncPermissionState();
+      if (state === 'active' && !requestInFlightRef.current) {
+        void readPermissionState().then(({ foregroundGranted: nextForeground, backgroundGranted: nextBackground }) => {
+          if (nextForeground && nextBackground) {
+            setFlowState('complete');
+          } else if (nextForeground) {
+            setFlowState('background');
+          }
+        });
       }
     });
     return () => subscription.remove();
-  }, [syncPermissionState]);
+  }, [readPermissionState]);
 
   const allGranted = foregroundGranted && backgroundGranted;
-
-  useEffect(() => {
-    if (allGranted || currentStep === 0) return;
-
-    const interval = setInterval(() => {
-      void syncPermissionState();
-    }, 1500);
-
-    return () => clearInterval(interval);
-  }, [allGranted, currentStep, syncPermissionState]);
 
   useEffect(() => {
     Animated.timing(drawerAnim, {
@@ -231,93 +262,63 @@ export default function LocationPermissionGateScreen({
     }).start();
   }, [drawerAnim, languageDrawerOpen]);
 
-  useEffect(() => {
-    if (allGranted) {
-      setCurrentStep(3);
-      return;
-    }
-    if (backgroundGranted) {
-      setCurrentStep((prev) => Math.max(prev, 2));
-      return;
-    }
-    if (foregroundGranted) {
-      setCurrentStep((prev) => Math.max(prev, 1));
-    }
-  }, [allGranted, backgroundGranted, foregroundGranted]);
-
   const requestForeground = useCallback(async () => {
-    setIsBusy(true);
-    let granted = false;
+    if (requestInFlightRef.current) return false;
+    requestInFlightRef.current = true;
+    setFlowState('requesting_foreground');
     try {
       const foreground = await Location.requestForegroundPermissionsAsync();
-      granted = foreground.status === 'granted';
-      if (granted) {
-        try {
-          await Location.getCurrentPositionAsync({
-            accuracy: Location.Accuracy.Highest,
-            mayShowUserSettingsDialog: true,
-          });
-        } catch {
-          // Permission may be granted even if fetching position fails.
-        }
+      const granted = foreground.status === 'granted';
+      const next = await readPermissionState();
+      if (granted && next.foregroundGranted) {
+        setFlowState(next.backgroundGranted ? 'complete' : 'background');
+      } else {
+        setFlowState('foreground');
       }
+      return granted;
     } catch (error) {
       trackVendorFailure('location_permission_foreground_request', error);
-      granted = false;
+      setFlowState('foreground');
+      return false;
     } finally {
-      await syncPermissionState();
-      setIsBusy(false);
+      requestInFlightRef.current = false;
     }
-
-    if (granted) {
-      setCurrentStep(2);
-    }
-    return granted;
-  }, [syncPermissionState]);
+  }, [readPermissionState]);
 
   const requestBackground = useCallback(async () => {
-    setIsBusy(true);
-    let granted = false;
+    if (requestInFlightRef.current) return false;
+    requestInFlightRef.current = true;
     try {
-      const foregroundReady = foregroundGranted || (await requestForeground());
-      if (!foregroundReady) return granted;
-
-      const background = await Location.requestBackgroundPermissionsAsync();
-      granted = background.status === 'granted';
-
-      if (!granted && Platform.OS === 'android') {
-        Alert.alert(
-          copy.allowAllTimeTitle,
-          copy.allowAllTimeBody,
-          [
-            {
-              text: copy.openSettings,
-              onPress: () => {
-                trackVendorClick('location_permission_alert_open_settings', {
-                  source: 'background_permission_denied_alert',
-                });
-                void Linking.openSettings();
-              },
-            },
-            { text: copy.notNow, style: 'cancel' },
-          ]
-        );
+      let next = await readPermissionState();
+      if (!next.foregroundGranted) {
+        requestInFlightRef.current = false;
+        const foregroundReady = await requestForeground();
+        if (!foregroundReady) return false;
+        requestInFlightRef.current = true;
+        next = await readPermissionState();
       }
+
+      if (!next.foregroundGranted) {
+        setFlowState('foreground');
+        return false;
+      }
+
+      setFlowState('opening_settings');
+      const background = await Location.requestBackgroundPermissionsAsync();
+      const refreshed = await readPermissionState();
+      const granted = background.status === 'granted' || refreshed.backgroundGranted;
+      setFlowState(granted ? 'complete' : 'background');
+      return granted;
     } catch (error) {
       trackVendorFailure('location_permission_background_request', error, {
         foreground_granted: foregroundGranted,
       });
-      granted = false;
+      setFlowState('background');
+      return false;
     } finally {
-      await syncPermissionState();
-      setIsBusy(false);
+      requestInFlightRef.current = false;
     }
-
-    if (granted) {
-      setCurrentStep(3);
-    }
-    return granted;
-  }, [copy.allowAllTimeBody, copy.allowAllTimeTitle, copy.notNow, copy.openSettings, foregroundGranted, requestForeground, syncPermissionState]);
+  }, [foregroundGranted, readPermissionState, requestForeground]);
 
   const openPhoneSettings = useCallback((source: string) => {
     trackVendorClick('location_permission_open_phone_settings', {
@@ -357,9 +358,12 @@ export default function LocationPermissionGateScreen({
   const foregroundStatus = foregroundGranted ? copy.preciseEnabled : copy.precisePending;
   const backgroundStatus = backgroundGranted
     ? copy.bgEnabled
+    : flowState === 'opening_settings'
+      ? copy.bgChecking
     : backgroundAvailable
       ? copy.bgPending
       : copy.bgSettings;
+  const backgroundPanelBody = flowState === 'opening_settings' ? copy.bgReturning : copy.bgPanelBody;
 
   const finalGrids = useMemo(
     () => [
@@ -508,7 +512,7 @@ export default function LocationPermissionGateScreen({
           <View style={styles.introCtaWrap}>
             <SlideToConfirmButton
               label={copy.startSlider}
-              onConfirm={() => setCurrentStep(1)}
+      onConfirm={() => setFlowState(foregroundGranted ? 'background' : 'foreground')}
               disabled={false}
               loading={false}
             />
@@ -535,38 +539,6 @@ export default function LocationPermissionGateScreen({
               <Text style={styles.statusBody}>{foregroundStatus}</Text>
             </View>
           </View>
-          <Pressable
-            style={({ pressed }) => [
-              styles.primaryButton,
-              (isBusy || foregroundGranted) && styles.primaryButtonDisabled,
-              pressed && !isBusy && !foregroundGranted && styles.primaryButtonPressed,
-            ]}
-            onPress={() => {
-              trackVendorClick('location_permission_enable_foreground', {
-                foreground_granted: foregroundGranted,
-                background_granted: backgroundGranted,
-                source: 'step_foreground_button',
-              });
-              void requestForeground();
-            }}
-            disabled={isBusy || foregroundGranted}
-            accessibilityLabel={copy.preciseButton}
-          >
-            {isBusy ? (
-              <ActivityIndicator size="small" color="#FFFFFF" />
-            ) : (
-              <>
-                <Text style={styles.primaryButtonText}>
-                  {foregroundGranted ? copy.preciseDone : copy.preciseButton}
-                </Text>
-                <MaterialIcons
-                  name={foregroundGranted ? 'check-circle' : 'chevron-right'}
-                  size={18}
-                  color="#FFFFFF"
-                />
-              </>
-            )}
-          </Pressable>
           <View style={styles.miniGridRow}>
             <View style={styles.miniGridCard}>
               <MaterialIcons name="place" size={18} color="#16A34A" />
@@ -579,7 +551,7 @@ export default function LocationPermissionGateScreen({
           </View>
           <Pressable
             style={({ pressed }) => [styles.secondaryButton, pressed && styles.secondaryButtonPressed]}
-            onPress={() => setCurrentStep(0)}
+            onPress={() => setFlowState('intro')}
             accessibilityLabel={copy.back}
           >
             <Text style={styles.secondaryButtonText}>{copy.back}</Text>
@@ -592,7 +564,7 @@ export default function LocationPermissionGateScreen({
       return (
         <View style={styles.panelCard}>
           <Text style={styles.panelTitle}>{copy.bgPanelTitle}</Text>
-          <Text style={styles.panelSubtitle}>{copy.bgPanelBody}</Text>
+          <Text style={styles.panelSubtitle}>{backgroundPanelBody}</Text>
           <View style={styles.statusCard}>
             <View style={[styles.statusIconWrap, backgroundGranted && styles.statusIconWrapDone]}>
               <MaterialIcons
@@ -606,38 +578,6 @@ export default function LocationPermissionGateScreen({
               <Text style={styles.statusBody}>{backgroundStatus}</Text>
             </View>
           </View>
-          <Pressable
-            style={({ pressed }) => [
-              styles.primaryButton,
-              (isBusy || backgroundGranted) && styles.primaryButtonDisabled,
-              pressed && !isBusy && !backgroundGranted && styles.primaryButtonPressed,
-            ]}
-            onPress={() => {
-              trackVendorClick('location_permission_enable_background', {
-                foreground_granted: foregroundGranted,
-                background_granted: backgroundGranted,
-                source: 'step_background_button',
-              });
-              void requestBackground();
-            }}
-            disabled={isBusy || backgroundGranted}
-            accessibilityLabel={copy.bgButton}
-          >
-            {isBusy ? (
-              <ActivityIndicator size="small" color="#FFFFFF" />
-            ) : (
-              <>
-                <Text style={styles.primaryButtonText}>
-                  {backgroundGranted ? copy.bgDone : copy.bgButton}
-                </Text>
-                <MaterialIcons
-                  name={backgroundGranted ? 'check-circle' : 'chevron-right'}
-                  size={18}
-                  color="#FFFFFF"
-                />
-              </>
-            )}
-          </Pressable>
           <View style={styles.gridListSingle}>
             <View style={styles.gridCallout}>
               <MaterialIcons name="info" size={18} color="#166534" />
@@ -700,7 +640,7 @@ export default function LocationPermissionGateScreen({
         {!allGranted && (
           <Pressable
             style={({ pressed }) => [styles.ghostButton, pressed && styles.ghostButtonPressed]}
-            onPress={() => setCurrentStep(foregroundGranted ? 2 : 1)}
+            onPress={() => setFlowState(foregroundGranted ? 'background' : 'foreground')}
             accessibilityLabel={copy.finishStep}
           >
             <Text style={styles.ghostButtonText}>{copy.finishStep}</Text>
@@ -708,6 +648,72 @@ export default function LocationPermissionGateScreen({
         )}
       </View>
     );
+  };
+
+  const renderStickyAction = () => {
+    if (currentStep === 1) {
+      return (
+        <View style={styles.stickyActionBar}>
+          <Text style={styles.stickyActionHint}>{copy.precisePanelTitle}</Text>
+          <Pressable
+            style={({ pressed }) => [
+              styles.primaryButton,
+              (isBusy || foregroundGranted) && styles.primaryButtonDisabled,
+              pressed && !isBusy && !foregroundGranted && styles.primaryButtonPressed,
+            ]}
+            onPress={() => {
+              trackVendorClick('location_permission_enable_foreground', {
+                foreground_granted: foregroundGranted,
+                background_granted: backgroundGranted,
+                source: 'sticky_foreground_button',
+              });
+              void requestForeground();
+            }}
+            disabled={isBusy || foregroundGranted}
+            accessibilityLabel={copy.preciseButton}
+          >
+            {isBusy ? <ActivityIndicator size="small" color="#FFFFFF" /> : <>
+              <Text style={styles.primaryButtonText}>
+                {foregroundGranted ? copy.preciseDone : copy.preciseButton}
+              </Text>
+              <MaterialIcons name={foregroundGranted ? 'check-circle' : 'chevron-right'} size={18} color="#FFFFFF" />
+            </>}
+          </Pressable>
+        </View>
+      );
+    }
+
+    if (currentStep === 2) {
+      return (
+        <View style={styles.stickyActionBar}>
+          <Text style={styles.stickyActionHint}>{copy.bgPanelTitle}</Text>
+          <Pressable
+            style={({ pressed }) => [
+              styles.primaryButton,
+              (isBusy || backgroundGranted) && styles.primaryButtonDisabled,
+              pressed && !isBusy && !backgroundGranted && styles.primaryButtonPressed,
+            ]}
+            onPress={() => {
+              trackVendorClick('location_permission_enable_background', {
+                foreground_granted: foregroundGranted,
+                background_granted: backgroundGranted,
+                source: 'sticky_background_button',
+              });
+              void requestBackground();
+            }}
+            disabled={isBusy || backgroundGranted}
+            accessibilityLabel={copy.bgButton}
+          >
+            {isBusy ? <ActivityIndicator size="small" color="#FFFFFF" /> : <>
+              <Text style={styles.primaryButtonText}>{backgroundGranted ? copy.bgDone : copy.bgButton}</Text>
+              <MaterialIcons name={backgroundGranted ? 'check-circle' : 'chevron-right'} size={18} color="#FFFFFF" />
+            </>}
+          </Pressable>
+        </View>
+      );
+    }
+
+    return null;
   };
 
   return (
@@ -766,11 +772,12 @@ export default function LocationPermissionGateScreen({
         </View>
       </Modal>
       <ScrollView
+        style={styles.scroll}
         contentContainerStyle={[
           styles.content,
           {
             paddingTop: Math.max(10, insets.top * 0.35),
-            paddingBottom: Math.max(32, insets.bottom + 20),
+            paddingBottom: Math.max(150, insets.bottom + 120),
           },
         ]}
         showsVerticalScrollIndicator={false}
@@ -804,6 +811,7 @@ export default function LocationPermissionGateScreen({
           </Pressable>
         </View>
       </ScrollView>
+      {renderStickyAction()}
     </SafeAreaView>
   );
 }
@@ -813,10 +821,32 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#F5FAF5',
   },
+  scroll: {
+    flex: 1,
+  },
   content: {
     paddingHorizontal: 18,
     paddingBottom: 32,
     gap: 16,
+  },
+  stickyActionBar: {
+    gap: 8,
+    paddingHorizontal: 18,
+    paddingTop: 10,
+    paddingBottom: 12,
+    backgroundColor: '#FFFFFF',
+    borderTopWidth: 1,
+    borderTopColor: '#D8E6DA',
+    shadowColor: '#0F5132',
+    shadowOpacity: 0.12,
+    shadowOffset: { width: 0, height: -3 },
+    shadowRadius: 8,
+    elevation: 8,
+  },
+  stickyActionHint: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#64748B',
   },
   languageBanner: {
     flexDirection: 'row',

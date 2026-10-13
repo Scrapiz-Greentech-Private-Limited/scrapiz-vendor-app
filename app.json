@@ -40,6 +40,23 @@
   "plugins": [
     "expo-notifications",
     [
+      "@livekit/react-native-expo-plugin",
+      {
+        "android": {
+          "audioType": "communication"
+        }
+      }
+    ],
+    [
+      "@config-plugins/react-native-webrtc", 
+      {
+        "android": {
+          "cameraPermission": "Allow $(PRODUCT_NAME) to use camera",
+          "microphonePermission": "Allow $(PRODUCT_NAME) to use microphone"
+        }
+      }
+    ],
+    [
       "expo-splash-screen",
       {
         "image": "./assets/images/image_splashScreen_green.jpg",
