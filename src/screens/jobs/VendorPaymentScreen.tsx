@@ -83,14 +83,28 @@ const VendorPaymentScreen: React.FC<VendorPaymentScreenProps> = ({
     try {
       const response = await ApiService.getVendorPaymentState(bookingId);
       const data = (response as any)?.data ?? response;
-      setTxData(data?.payment_transaction ?? null);
+      const tx = data?.payment_transaction ?? null;
+      setTxData(tx);
+
+      const isDone =
+        tx?.status === 'paid' ||
+        tx?.status === 'cash_paid' ||
+        data?.quote_status === 'paid' ||
+        data?.booking_status === 'completed';
+
+      if (isDone) {
+        if (pollRef.current) clearInterval(pollRef.current);
+        const payout = Number(tx?.amount ?? data?.total_amount ?? 0);
+        onDone({ bookingId, totalPayout: payout });
+        return;
+      }
     } catch (err: any) {
       if (isManual) onShowToast(err?.message || 'Failed to refresh.', 'error');
     } finally {
       setLoading(false);
       if (isManual) setRefreshing(false);
     }
-  }, [bookingId, onShowToast]);
+  }, [bookingId, onShowToast, onDone]);
 
   useEffect(() => {
     void loadPaymentState();
@@ -173,8 +187,14 @@ const VendorPaymentScreen: React.FC<VendorPaymentScreenProps> = ({
             try {
               const result = await ApiService.submitCashHandedOver(bookingId);
               const data = (result as any)?.data ?? result;
-              setTxData(data?.payment_transaction ?? txData);
-              onShowToast('Cash handover recorded. Waiting for customer.', 'success');
+              const tx = data?.payment_transaction ?? txData;
+              setTxData(tx);
+              if (tx?.status === 'paid' || tx?.status === 'cash_paid' || data?.fulfilled || data?.success) {
+                if (pollRef.current) clearInterval(pollRef.current);
+                onDone({ bookingId, totalPayout: Number(tx?.amount ?? totalAmount) });
+              } else {
+                onShowToast('Cash handover recorded.', 'success');
+              }
             } catch (err: any) {
               onShowToast(err?.message || 'Failed to record cash handover.', 'error');
             } finally {
